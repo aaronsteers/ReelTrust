@@ -20,7 +20,7 @@ To automatically install system dependencies:
 uv run poe install-system-deps
 ```
 
-## Verify Installation**
+## Verify Installation
 
 ```bash
 # Run the CLI to verify everything works
@@ -120,19 +120,17 @@ Common tasks:
    git checkout -b feature/your-feature-name
    ```
 
-2. **Make your changes**
-
+1. **Make your changes**
    - Write code
    - Add/update tests
    - Update documentation
-
-3. **Run checks**
+1. **Run checks**
 
    ```bash
    uv run poe check
    ```
 
-4. **Commit your changes**
+1. **Commit your changes**
 
    ```bash
    git add .
@@ -140,6 +138,7 @@ Common tasks:
    ```
 
    We follow [Conventional Commits](https://www.conventionalcommits.org/):
+
    - `feat:` - New feature
    - `fix:` - Bug fix
    - `docs:` - Documentation changes
@@ -147,7 +146,7 @@ Common tasks:
    - `refactor:` - Code refactoring
    - `chore:` - Maintenance tasks
 
-5. **Push and create a Pull Request**
+1. **Push and create a Pull Request**
 
    ```bash
    git push origin feature/your-feature-name

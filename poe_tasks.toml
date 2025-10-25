@@ -11,6 +11,8 @@ executor.type = "uv"
 lint = "ruff check ."
 format = "ruff format ."
 format-check = "ruff format --check ."
+md-lint = "mdformat --check *.md docs/"
+md-lint-fix = "mdformat *.md docs/"
 
 # Testing
 test = "pytest"
@@ -20,8 +22,8 @@ test-unit = "pytest -m unit"
 test-integration = "pytest -m integration"
 
 # Combined tasks
-check = ["format-check", "lint", "test"]
-fix = ["format", "lint --fix"]
+check = ["format-check", "md-lint", "lint", "test"]
+fix = ["format", "md-lint-fix", "lint --fix"]
 
 # Build and install
 install = "uv sync --extra dev"

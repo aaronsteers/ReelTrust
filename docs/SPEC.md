@@ -2,7 +2,7 @@
 
 This specification outlines a **minimal, no-database, no-always-on infrastructure** approach to providing cryptographic content authenticity for video and audio media. It is designed as a proof-of-concept that can scale from small independent creators to major platforms with minimal changes.
 
----
+______________________________________________________________________
 
 ## 🔍 Purpose
 
@@ -12,7 +12,7 @@ To provide an open-source toolchain and S3-backed infrastructure that allows con
 - ⛔ Detect and **disprove manipulation**
 - 🪪 Establish a verifiable timeline of creation and publication
 
----
+______________________________________________________________________
 
 ## 🧩 Project Overview
 
@@ -21,7 +21,7 @@ To provide an open-source toolchain and S3-backed infrastructure that allows con
 - 🧾 **Infrastructure**: Stateless, no always-on services, no DBs
 - 🔐 **Trust**: TLS-style certs, SHA-based digests, optional CA-level signing later
 
----
+______________________________________________________________________
 
 ## 🧑‍💻 Audience & Use Cases
 
@@ -54,21 +54,21 @@ To provide an open-source toolchain and S3-backed infrastructure that allows con
 - Can optionally download verification package or run `verifytool check` themselves
 - Will be provided educational material to understand what a valid/invalid signature means
 
----
+______________________________________________________________________
 
 ## 📦 Architecture
 
 ### Signing Workflow (Producer-side)
 
 1. `sign()` CLI tool invoked on local machine
-2. Generates:
+1. Generates:
    - Compressed reference video
    - Audio fingerprint (via Dejavu or equivalent)
    - `metadata.json` with timestamp, location, cert info
    - Digital signature of all the above
-3. Stores in a temp local directory: `/output/video_title_digest_package/`
-4. Zips and uploads to our free service endpoint
-5. Server:
+1. Stores in a temp local directory: `/output/video_title_digest_package/`
+1. Zips and uploads to our free service endpoint
+1. Server:
    - Unzips + validates structure
    - Verifies signature integrity + media format
    - Stores package in S3 with public read access
@@ -76,14 +76,14 @@ To provide an open-source toolchain and S3-backed infrastructure that allows con
 ### Verification Workflow (Consumer / Platform)
 
 1. `check()` CLI tool invoked with a video/clip file + S3 URL
-2. Downloads reference digest
-3. Compares:
+1. Downloads reference digest
+1. Compares:
    - Video hashes
    - Audio fingerprint matches
    - Metadata consistency (timestamp range, etc.)
-4. Returns PASS/FAIL + human-readable explanation
+1. Returns PASS/FAIL + human-readable explanation
 
----
+______________________________________________________________________
 
 ## 🧪 File Structure (per verified asset)
 
@@ -96,7 +96,7 @@ my_video_package/
 └── manifest.json              # Full manifest of hashes + file references
 ```
 
----
+______________________________________________________________________
 
 ## 🚀 Hosting + Cost Model
 
@@ -108,7 +108,7 @@ my_video_package/
   - Signature validation on upload
   - Occasional garbage collection for invalid/malformed files
 
----
+______________________________________________________________________
 
 ## 🔐 Trust Model (Initial Phase)
 
@@ -117,7 +117,7 @@ my_video_package/
 - Future: support CA-issued signing certs
 - Packages are uniquely identified by SHA-based ID
 
----
+______________________________________________________________________
 
 ## 🧠 Next Steps
 
@@ -128,7 +128,7 @@ my_video_package/
 - [ ] Publish S3 public viewer + JSON index for browsing
 - [ ] Draft educational materials for creators, platforms, and consumers
 
----
+______________________________________________________________________
 
 Let us know if you're interested in contributing, adopting, or federating your own verification mirror or upload endpoint.
 

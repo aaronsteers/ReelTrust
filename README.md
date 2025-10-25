@@ -64,12 +64,12 @@ reeltrust verify ./my_video.mp4 ./my_video_package/
 **Verification Process:**
 
 1. Validates package structure (manifest, signature, digest video)
-2. Verifies manifest signature integrity
-3. Confirms original video hash matches manifest
-4. Recreates digest video using same compression pipeline
-5. Compares digests via SHA-256 hash
-6. Falls back to SSIM (structural similarity) if hashes differ
-7. Validates frame counts are identical
+1. Verifies manifest signature integrity
+1. Confirms original video hash matches manifest
+1. Recreates digest video using same compression pipeline
+1. Compares digests via SHA-256 hash
+1. Falls back to SSIM (structural similarity) if hashes differ
+1. Validates frame counts are identical
 
 **Output:**
 
@@ -87,12 +87,14 @@ reeltrust verify ./my_video.mp4 ./my_video_package/
 
 ## 📁 Package Contents
 
-    my_video_package/
-    ├── digest_video.mp4
-    ├── audio_fingerprint.json
-    ├── metadata.json
-    ├── signature.txt
-    └── manifest.json
+```
+my_video_package/
+├── digest_video.mp4
+├── audio_fingerprint.json
+├── metadata.json
+├── signature.txt
+└── manifest.json
+```
 
 ## 🛠️ Tech Stack
 
@@ -115,7 +117,7 @@ Everything is handled via:
 
 MIT (TBD)
 
----
+______________________________________________________________________
 
 ## 🤝 Contributing
 
