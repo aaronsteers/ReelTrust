@@ -1,0 +1,176 @@
+name: Slash Command Dispatch
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  validate-and-run:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/poe')
+    steps:
+      - name: Add reaction
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+
+      - name: Checkout base repository
+        uses: actions/checkout@v4
+        with:
+          # Only checkout the base repository, not the PR code
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Extract and validate command
+        id: extract-command
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # Safely extract command from comment using environment variable
+          TASK=$(echo "$COMMENT_BODY" | sed -n 's|^/poe[[:space:]]*\([a-zA-Z0-9_-]*\).*|\1|p')
+          
+          # Validate task name contains only safe characters
+          if [[ ! "$TASK" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "error=Invalid task name. Only alphanumeric characters, underscores, and hyphens allowed." >> $GITHUB_OUTPUT
+            echo "task=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # List of allowed tasks - whitelist approach
+          case "$TASK" in
+            test|test-fast|test-cov|test-unit|test-integration|lint|format|format-check|check|fix|install|install-prod|build|clean|version|docs|docs-serve|typecheck|security|deps|pre-commit)
+              echo "task=$TASK" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "error=Task '$TASK' is not allowed." >> $GITHUB_OUTPUT
+              echo "task=" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Run poe task
+        id: run-task
+        if: steps.extract-command.outputs.task != '' && steps.extract-command.outputs.error == ''
+        env:
+          TASK: ${{ steps.extract-command.outputs.task }}
+        run: |
+          echo "Running poe task: $TASK"
+          
+          # Run the task and capture output securely
+          if uv run poe "$TASK" > output.txt 2>&1; then
+            echo "exit_code=0" >> $GITHUB_OUTPUT
+          else
+            echo "exit_code=1" >> $GITHUB_OUTPUT
+          fi
+          
+          # Safely read output (limit size to prevent abuse)
+          head -n 100 output.txt > safe_output.txt
+          {
+            echo "output<<EOF"
+            cat safe_output.txt
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Comment result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          TASK: ${{ steps.extract-command.outputs.task }}
+          ERROR: ${{ steps.extract-command.outputs.error }}
+          EXIT_CODE: ${{ steps.run-task.outputs.exit_code }}
+          OUTPUT: ${{ steps.run-task.outputs.output }}
+        with:
+          script: |
+            const task = process.env.TASK;
+            const error = process.env.ERROR;
+            const exitCode = process.env.EXIT_CODE;
+            const output = process.env.OUTPUT;
+            
+            let comment;
+            
+            if (error) {
+              comment = `❌ **Error**: ${error}
+              
+              Available tasks: test, test-fast, test-cov, test-unit, test-integration, lint, format, format-check, check, fix, install, install-prod, build, clean, version, docs, docs-serve, typecheck, security, pre-commit`;
+            } else if (task) {
+              const emoji = exitCode === '0' ? '✅' : '❌';
+              const status = exitCode === '0' ? 'succeeded' : 'failed';
+              
+              // Sanitize output for display
+              const sanitizedOutput = output
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+              
+              comment = `${emoji} **Poe task \`${task}\` ${status}**
+
+              <details>
+              <summary>Command output</summary>
+
+              \`\`\`
+              ${sanitizedOutput}
+              \`\`\`
+
+              </details>`;
+            } else {
+              comment = '❌ **Error**: No valid task specified.';
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+      - name: Add final reaction
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          TASK: ${{ steps.extract-command.outputs.task }}
+          ERROR: ${{ steps.extract-command.outputs.error }}
+          EXIT_CODE: ${{ steps.run-task.outputs.exit_code }}
+        with:
+          script: |
+            const task = process.env.TASK;
+            const error = process.env.ERROR;
+            const exitCode = process.env.EXIT_CODE;
+            
+            let reaction;
+            if (error || !task) {
+              reaction = 'confused';
+            } else {
+              reaction = exitCode === '0' ? '+1' : '-1';
+            }
+            
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: reaction
+            });

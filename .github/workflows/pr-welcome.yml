@@ -1,0 +1,31 @@
+name: PR Welcome
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read welcome message
+        id: welcome-message
+        run: |
+          {
+            echo "message<<EOF"
+            cat .github/pr-welcome-message.md
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create welcome comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.welcome-message.outputs.message }}
