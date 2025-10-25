@@ -121,9 +121,11 @@ Common tasks:
    ```
 
 1. **Make your changes**
+
    - Write code
    - Add/update tests
    - Update documentation
+
 1. **Run checks**
 
    ```bash

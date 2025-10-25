@@ -24,12 +24,12 @@ This document tracks technical debt and future enhancements accumulated during t
    - **Future**: Support CA-issued signing certificates
    - **Location**: `src/reeltrust/signature.py` - `create_signature()` function
    - **Note**: Added reminder in signature.json output
-2. **Verification Functionality**
+1. **Verification Functionality**
    - **Current**: Only signing is implemented
    - **Future**: Implement `reeltrust check` command to verify packages
    - **Future**: Compare video hashes, audio fingerprints, validate signatures
    - **Future**: Return PASS/FAIL + human-readable explanations
-3. **S3 Upload Integration**
+1. **S3 Upload Integration**
    - **Current**: Packages created locally only
    - **Future**: Upload signed packages to S3 bucket
    - **Future**: Generate shareable S3 URLs
@@ -59,17 +59,21 @@ This document tracks technical debt and future enhancements accumulated during t
    - **Future**: More granular error messages
    - **Future**: Graceful handling of videos without audio
    - **Future**: Validation of input video formats
+
 1. **Compression Options**
 
    - **Current**: Fixed 240px width, CRF 32
    - **Future**: Allow configurable compression levels
    - **Future**: Optimize compression settings for different use cases
+
 1. **Performance**
 
    - **Future**: Progress bars for long operations
    - **Future**: Parallel processing where applicable
    - **Future**: Optimize for large video files
+
 1. **Testing**
+
    - **Future**: Unit tests for all modules
    - **Future**: Integration tests for full workflow
    - **Future**: Test with various video formats and edge cases
