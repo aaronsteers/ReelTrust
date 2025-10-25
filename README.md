@@ -91,4 +91,11 @@ MIT (TBD)
 
 ---
 
-Want to contribute or verify? Start here → [TODO: CONTRIBUTING.md]
+## 🤝 Contributing
+
+Want to contribute? Check out our [Contributing Guide](docs/CONTRIBUTING.md) to get started!
+
+See also:
+
+- [SPEC.md](docs/SPEC.md) - Full project specification
+- [project_plan.md](docs/project_plan.md) - Roadmap and technical debt tracker

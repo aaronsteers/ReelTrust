@@ -24,6 +24,19 @@ install = "uv sync --extra dev"
 install-prod = "uv sync"
 build = "uv build"
 
+# System dependencies (macOS only)
+[tool.poe.tasks.install-system-deps]
+help = "Install system dependencies (ffmpeg, chromaprint) via Homebrew (macOS only)"
+shell = """
+if command -v brew >/dev/null 2>&1; then
+    echo "Installing system dependencies via Homebrew..."
+    brew install ffmpeg chromaprint
+else
+    echo "Error: Homebrew not found. Please install Homebrew first: https://brew.sh"
+    exit 1
+fi
+"""
+
 # Documentation (placeholder for future)
 docs = "echo 'Documentation generation not yet configured'"
 docs-serve = "echo 'Documentation serving not yet configured'"
