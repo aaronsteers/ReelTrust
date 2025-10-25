@@ -4,6 +4,10 @@ _**⚠️ NOTE: This product is a work in progress. Below explains planned featu
 
 **ReelTrust** is an open-source framework for media authenticity, designed to help creators, platforms, and consumers verify whether audio/video content is original, manipulated, or traceable to its source.
 
+## Design Spec and Overview
+
+See [docs/SPEC.md](docs/SPEC.md) for a full specification and writeup.
+
 ## 🚀 Goals
 
 - Provide **proof of authenticity** for media content.
