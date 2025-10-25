@@ -17,7 +17,7 @@ def calculate_manifest_hash(manifest_data: dict[str, Any]) -> str:
         Hex string of SHA-256 hash
     """
     # Convert to canonical JSON (sorted keys, no whitespace)
-    canonical_json = json.dumps(manifest_data, sort_keys=True, separators=(',', ':'))
+    canonical_json = json.dumps(manifest_data, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical_json.encode()).hexdigest()
 
 
@@ -26,7 +26,7 @@ def create_manifest(
     original_video_hash: str,
     digest_video_hash: str,
     audio_fingerprint_hash: str,
-    metadata_hash: str
+    metadata_hash: str,
 ) -> dict[str, Any]:
     """
     Create a manifest containing all file hashes and references.
@@ -43,25 +43,27 @@ def create_manifest(
     """
     manifest = {
         "version": "1.0",
-        "package_id": original_video_hash[:16],  # Use first 16 chars of original video hash as ID
+        "package_id": original_video_hash[
+            :16
+        ],  # Use first 16 chars of original video hash as ID
         "files": {
             "digest_video.mp4": {
                 "sha256": digest_video_hash,
-                "description": "Compressed reference video digest"
+                "description": "Compressed reference video digest",
             },
             "audio_fingerprint.json": {
                 "sha256": audio_fingerprint_hash,
-                "description": "Audio fingerprint data"
+                "description": "Audio fingerprint data",
             },
             "metadata.json": {
                 "sha256": metadata_hash,
-                "description": "Video metadata and creation info"
-            }
+                "description": "Video metadata and creation info",
+            },
         },
         "original_video": {
             "sha256": original_video_hash,
-            "description": "SHA-256 hash of the original source video"
-        }
+            "description": "SHA-256 hash of the original source video",
+        },
     }
 
     return manifest
@@ -86,7 +88,7 @@ def create_signature(manifest_data: dict[str, Any]) -> dict[str, Any]:
         "version": "1.0",
         "algorithm": "SHA-256",
         "manifest_hash": manifest_hash,
-        "note": "This is a cryptographic hash. Future versions will support digital signatures with certificate chains."
+        "note": "This is a cryptographic hash. Future versions will support digital signatures with certificate chains.",
     }
 
     return signature

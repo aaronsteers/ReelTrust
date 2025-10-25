@@ -25,33 +25,59 @@ See [docs/SPEC.md](docs/SPEC.md) for a full specification and writeup.
 
 ## 🧑‍💻 For Creators
 
-Example usage:
+### Create a Signed Package
 
-    reeltrust sign ./my_video.mp4
+```bash
+reeltrust sign ./my_video.mp4 --user "creator@example.com" --gps "37.7749,-122.4194"
+```
+
+**Options:**
+
+- `-o, --output` - Output directory (default: `.data/outputs`)
+- `-u, --user` - User identity (username, email, etc.)
+- `-g, --gps` - GPS coordinates as `'latitude,longitude'`
+- `-w, --width` - Compressed video width (default: 240)
 
 This command:
 
-- Extracts a compressed reference video
-- Generates an audio fingerprint
+- Extracts a compressed reference video (240px digest)
+- Generates an audio fingerprint using Chromaprint
 - Packages metadata and timestamps
-- Signs the result
-- Uploads to a public S3 location
+- Creates a signed manifest
+- **Note:** S3 upload coming soon
 
-Returns a short URL or asset pointer for later verification.
+Returns a verification package directory for later verification.
 
 ## 🎞️ For Platforms
 
-Example usage:
+### Verify a Video Against Its Package
 
-    reeltrust verify ./clip.mp4 --reference https://s3.example.com/abcd123/
+```bash
+reeltrust verify ./my_video.mp4 ./my_video_package/
+```
 
-Verifies:
+**Options:**
 
-- That a clip matches known signed footage
-- Timestamp falls within valid capture window
-- Optional GPS or cert data
+- `-w, --width` - Width for compressed digest (default: 240)
+- `-t, --threshold` - Minimum SSIM threshold for validation (default: 0.99)
 
-Returns a verdict and a public proof log.
+**Verification Process:**
+
+1. Validates package structure (manifest, signature, digest video)
+2. Verifies manifest signature integrity
+3. Confirms original video hash matches manifest
+4. Recreates digest video using same compression pipeline
+5. Compares digests via SHA-256 hash
+6. Falls back to SSIM (structural similarity) if hashes differ
+7. Validates frame counts are identical
+
+**Output:**
+
+- ✓ VERIFICATION PASSED - Video digest is authentic
+- ✗ VERIFICATION FAILED - Video may have been tampered with
+- Detailed check results and error messages
+
+**Note:** Clip/timestamp verification and S3 reference support coming soon.
 
 ## 👀 For Viewers
 

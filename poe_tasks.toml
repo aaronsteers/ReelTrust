@@ -1,6 +1,10 @@
 # PoeThePoet task definitions
 # https://poethepoet.natn.io/
 
+# Configure poe to use uv executor to ensure 'poe lint' uses same env as 'uv run poe lint'
+[tool.poe]
+executor.type = "uv"
+
 [tool.poe.tasks]
 
 # Linting and formatting
@@ -8,7 +12,7 @@ lint = "ruff check ."
 format = "ruff format ."
 format-check = "ruff format --check ."
 
-# Testing  
+# Testing
 test = "pytest"
 test-fast = "pytest -x"
 test-cov = "pytest --cov=reeltrust --cov-report=html"
@@ -16,13 +20,34 @@ test-unit = "pytest -m unit"
 test-integration = "pytest -m integration"
 
 # Combined tasks
-check = ["format-check", "lint", "deps", "test"]
+check = ["format-check", "lint", "test"]
 fix = ["format", "lint --fix"]
 
 # Build and install
 install = "uv sync --extra dev"
 install-prod = "uv sync"
 build = "uv build"
+
+# Development helpers
+clean = "rm -rf .pytest_cache .coverage htmlcov dist .ruff_cache"
+version = { "shell" = "echo 'reeltrust version:' && python -c 'import reeltrust; print(reeltrust.__version__)'" }
+
+[tool.poe.tasks.typecheck]
+help = "Run type checking with mypy"
+cmd = "echo 'Type checking not yet configured - consider adding mypy'"
+
+[tool.poe.tasks.security]
+help = "Run security checks with bandit"
+cmd = "echo 'Security scanning not yet configured - consider adding bandit'"
+
+[tool.poe.tasks.deps]
+help = "Check for unused and missing dependencies"
+cmd = "deptry ."
+
+# Pre-commit style combined task
+[tool.poe.tasks.pre-commit]
+help = "Run all pre-commit checks"
+sequence = ["format", "lint", "test-fast"]
 
 # System dependencies (macOS only)
 [tool.poe.tasks.install-system-deps]
@@ -36,28 +61,3 @@ else
     exit 1
 fi
 """
-
-# Documentation (placeholder for future)
-docs = "echo 'Documentation generation not yet configured'"
-docs-serve = "echo 'Documentation serving not yet configured'"
-
-# Development helpers
-clean = "rm -rf .pytest_cache .coverage htmlcov dist .ruff_cache"
-version = { "shell" = "echo 'reeltrust version:' && python -c 'import reeltrust; print(reeltrust.__version__)'" }
-
-[tool.poe.tasks.typecheck]
-help = "Run type checking with mypy"
-cmd = "echo 'Type checking not yet configured - consider adding mypy'"
-
-[tool.poe.tasks.security]
-help = "Run security checks with bandit"  
-cmd = "echo 'Security scanning not yet configured - consider adding bandit'"
-
-[tool.poe.tasks.deps]
-help = "Check for unused and missing dependencies"
-cmd = "deptry ."
-
-# Pre-commit style combined task
-[tool.poe.tasks.pre-commit]
-help = "Run all pre-commit checks"
-sequence = ["format", "lint", "test-fast"]

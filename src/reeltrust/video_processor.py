@@ -21,14 +21,19 @@ def compress_video(input_path: Path, output_path: Path, width: int = 240) -> Non
     # -c:a copy: skip audio (we'll fingerprint it separately)
     cmd = [
         "ffmpeg",
-        "-i", str(input_path),
-        "-vf", f"scale={width}:-2",  # -2 ensures height is divisible by 2
-        "-c:v", "libx264",
-        "-crf", "32",
-        "-preset", "fast",
+        "-i",
+        str(input_path),
+        "-vf",
+        f"scale={width}:-2",  # -2 ensures height is divisible by 2
+        "-c:v",
+        "libx264",
+        "-crf",
+        "32",
+        "-preset",
+        "fast",
         "-an",  # Remove audio (no audio stream)
         "-y",  # Overwrite output file
-        str(output_path)
+        str(output_path),
     ]
 
     try:
@@ -47,13 +52,17 @@ def extract_audio(input_path: Path, output_path: Path) -> None:
     """
     cmd = [
         "ffmpeg",
-        "-i", str(input_path),
+        "-i",
+        str(input_path),
         "-vn",  # No video
-        "-acodec", "pcm_s16le",  # PCM 16-bit for fingerprinting
-        "-ar", "44100",  # Sample rate
-        "-ac", "2",  # Stereo
+        "-acodec",
+        "pcm_s16le",  # PCM 16-bit for fingerprinting
+        "-ar",
+        "44100",  # Sample rate
+        "-ac",
+        "2",  # Stereo
         "-y",  # Overwrite output file
-        str(output_path)
+        str(output_path),
     ]
 
     try:

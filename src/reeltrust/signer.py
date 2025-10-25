@@ -1,6 +1,5 @@
 """Main signing orchestrator that creates verification packages."""
 
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,7 @@ def sign_video(
     user_identity: str | None = None,
     gps_coords: tuple[float, float] | None = None,
     additional_info: dict[str, Any] | None = None,
-    compression_width: int = 240
+    compression_width: int = 240,
 ) -> Path:
     """
     Create a signed verification package for a video file.
@@ -85,7 +84,7 @@ def sign_video(
         video_path,
         user_identity=user_identity,
         gps_coords=gps_coords,
-        additional_info=additional_info
+        additional_info=additional_info,
     )
     metadata_path = package_dir / "metadata.json"
     save_metadata(metadata, metadata_path)
@@ -99,7 +98,7 @@ def sign_video(
         original_video_hash,
         digest_video_hash,
         audio_fingerprint_hash,
-        metadata_hash
+        metadata_hash,
     )
     manifest_path = package_dir / "manifest.json"
     save_manifest(manifest, manifest_path)
@@ -109,7 +108,7 @@ def sign_video(
     save_signature(signature, signature_path)
     print(f"    Signature created: {signature['manifest_hash'][:16]}...")
 
-    print(f"\n✓ Verification package created successfully!")
+    print("\n✓ Verification package created successfully!")
     print(f"  Package ID: {manifest['package_id']}")
     print(f"  Location: {package_dir}")
 

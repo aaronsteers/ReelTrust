@@ -20,11 +20,13 @@ def extract_video_metadata(video_path: Path) -> dict[str, Any]:
     """
     cmd = [
         "ffprobe",
-        "-v", "quiet",
-        "-print_format", "json",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
         "-show_format",
         "-show_streams",
-        str(video_path)
+        str(video_path),
     ]
 
     try:
@@ -40,7 +42,7 @@ def create_metadata(
     video_path: Path,
     user_identity: str | None = None,
     gps_coords: tuple[float, float] | None = None,
-    additional_info: dict[str, Any] | None = None
+    additional_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Create metadata for a video file.
@@ -67,14 +69,18 @@ def create_metadata(
         "source_file": {
             "name": video_path.name,
             "size_bytes": file_stats.st_size,
-            "creation_time": datetime.fromtimestamp(file_stats.st_ctime, tz=timezone.utc).isoformat(),
-            "modification_time": datetime.fromtimestamp(file_stats.st_mtime, tz=timezone.utc).isoformat(),
+            "creation_time": datetime.fromtimestamp(
+                file_stats.st_ctime, tz=timezone.utc
+            ).isoformat(),
+            "modification_time": datetime.fromtimestamp(
+                file_stats.st_mtime, tz=timezone.utc
+            ).isoformat(),
         },
         "video_info": {
             "duration": float(ffprobe_data.get("format", {}).get("duration", 0)),
             "format": ffprobe_data.get("format", {}).get("format_name", "unknown"),
             "streams": len(ffprobe_data.get("streams", [])),
-        }
+        },
     }
 
     # Add optional fields
@@ -84,7 +90,7 @@ def create_metadata(
     if gps_coords:
         metadata["gps_location"] = {
             "latitude": gps_coords[0],
-            "longitude": gps_coords[1]
+            "longitude": gps_coords[1],
         }
 
     if additional_info:

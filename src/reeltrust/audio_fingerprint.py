@@ -23,7 +23,7 @@ def create_audio_fingerprint(audio_path: Path) -> dict[str, Any]:
 
         # Convert fingerprint to string if it's bytes
         if isinstance(fingerprint, bytes):
-            fingerprint = fingerprint.decode('utf-8')
+            fingerprint = fingerprint.decode("utf-8")
 
         return {
             "algorithm": "chromaprint",
