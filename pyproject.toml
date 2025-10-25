@@ -1,7 +1,7 @@
 [project]
-name = "awesome-python-template"
+name = "reeltrust"
 version = "0.1.0"
-description = "A modern Python project template with best practices and tooling"
+description = "A fully open source implementation for video/audio certification and verification"
 readme = "README.md"
 authors = [
     { name = "Aaron Steers", email = "aaron@aaronsteers.com" }
@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = []
 license = { file = "LICENSE" }
-keywords = ["template", "scaffold", "python", "modern"]
+keywords = ["video", "audio", "certification", "verification", "trust"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -63,7 +63,7 @@ ignore_notebooks = false
 
 # Known first-party modules (your own packages)
 known_first_party = [
-    "awesome_python_template",
+    "reeltrust",
 ]
 
 # To ignore specific error codes globally, uncomment and modify:
@@ -75,3 +75,32 @@ ignore = ["DEP004"]  # Ignore misplaced dev dependencies (common for test framew
 # --per-rule-ignores DEP002=unused-package  # Ignore unused dependency  
 # --per-rule-ignores DEP003=transitive-dep  # Ignore transitive dependency
 # --per-rule-ignores DEP004=dev-package     # Ignore misplaced dev dependency
+
+# Pytest configuration
+# https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--cov=reeltrust",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=80",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
