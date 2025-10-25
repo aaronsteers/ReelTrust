@@ -7,7 +7,11 @@ authors = [
     { name = "Aaron Steers", email = "aaron@aaronsteers.com" }
 ]
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "boto3>=1.40.59",
+    "dejavu>=1.5.0",
+    "ffmpeg-python>=0.2.0",
+]
 license = { file = "LICENSE" }
 keywords = ["video", "audio", "certification", "verification", "trust"]
 classifiers = [
