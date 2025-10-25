@@ -1,4 +1,4 @@
-name: CI
+name: Python Testing
 
 on:
   push:
@@ -32,17 +32,8 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra dev
 
-    - name: Run ruff format check
-      run: uv run ruff format --check .
-
-    - name: Run ruff linting
-      run: uv run ruff check .
-
-    - name: Run dependency analysis with deptry
-      run: uv run deptry .
-
     - name: Run tests with pytest
-      run: uv run pytest --cov=awesome_python_template --cov-report=xml --cov-report=term
+      run: uv run pytest --cov=reeltrust --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       if: matrix.python-version == '3.13'

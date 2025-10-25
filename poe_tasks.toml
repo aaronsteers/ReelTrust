@@ -11,7 +11,7 @@ format-check = "ruff format --check ."
 # Testing  
 test = "pytest"
 test-fast = "pytest -x"
-test-cov = "pytest --cov=awesome_python_template --cov-report=html"
+test-cov = "pytest --cov=reeltrust --cov-report=html"
 test-unit = "pytest -m unit"
 test-integration = "pytest -m integration"
 
@@ -30,7 +30,7 @@ docs-serve = "echo 'Documentation serving not yet configured'"
 
 # Development helpers
 clean = "rm -rf .pytest_cache .coverage htmlcov dist .ruff_cache"
-version = { "shell" = "echo 'awesome-python-template version:' && python -c 'import awesome_python_template; print(awesome_python_template.__version__)'" }
+version = { "shell" = "echo 'reeltrust version:' && python -c 'import reeltrust; print(reeltrust.__version__)'" }
 
 [tool.poe.tasks.typecheck]
 help = "Run type checking with mypy"

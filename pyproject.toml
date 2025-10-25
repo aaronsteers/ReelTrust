@@ -1,7 +1,7 @@
 [project]
-name = "awesome-python-template"
+name = "reeltrust"
 version = "0.1.0"
-description = "A modern Python project template with best practices and tooling"
+description = "A fully open source implementation for video/audio certification and verification"
 readme = "README.md"
 authors = [
     { name = "Aaron Steers", email = "aaron@aaronsteers.com" }
@@ -13,7 +13,7 @@ dependencies = [
     "ffmpeg-python>=0.2.0",
 ]
 license = { file = "LICENSE" }
-keywords = ["template", "scaffold", "python", "modern"]
+keywords = ["video", "audio", "certification", "verification", "trust"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -38,8 +38,13 @@ dev = [
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
 
+# [tool.pytest.ini_options]
+# Pytest config in a dedicated file: `pytest.ini`
+# https://docs.pytest.org/en/latest/reference/reference.html#ini-options-ref
+
 # Deptry configuration for dependency analysis
 # https://deptry.com/
+# Note: Deptry only supports configuration in pyproject.toml
 # Search "deptry" in this repo to find where to ignore false positives
 [tool.deptry]
 # Files and directories to exclude from analysis (regex patterns)
@@ -67,7 +72,7 @@ ignore_notebooks = false
 
 # Known first-party modules (your own packages)
 known_first_party = [
-    "awesome_python_template",
+    "reeltrust",
 ]
 
 # To ignore specific error codes globally, uncomment and modify:
