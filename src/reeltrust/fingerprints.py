@@ -13,6 +13,7 @@ import struct
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -280,4 +281,318 @@ def create_fingerprints(
                 'compute_time_ms': round(stats_time, 2),
             },
         },
+    }
+
+
+def hamming_distance(hash1: int, hash2: int) -> int:
+    """Calculate Hamming distance between two 64-bit hashes.
+
+    Hamming distance is the number of bit positions where two hashes differ.
+    Lower distance = more similar.
+
+    Args:
+        hash1: First 64-bit hash as integer
+        hash2: Second 64-bit hash as integer
+
+    Returns:
+        Number of differing bits (0-64)
+    """
+    # XOR gives 1 where bits differ, then count the 1s
+    return bin(hash1 ^ hash2).count('1')
+
+
+def compare_perceptual_hashes(
+    computed_data: bytes,
+    stored_data: bytes,
+    hash_size: int = 8,
+    window_size: int = 60,
+    fps: float = 30.0,
+) -> dict[str, Any]:
+    """Compare two sets of perceptual hashes (dHash or pHash) using windowed analysis.
+
+    Uses non-overlapping 60-frame windows (~2 seconds at 30fps) to detect localized
+    tampering. Takes the WORST (maximum) window mean as the verification metric to
+    ensure brief tampering can't be hidden by averaging across a long authentic video.
+
+    Args:
+        computed_data: Binary hash data from the video being verified
+        stored_data: Binary hash data from the original package
+        hash_size: Hash size (default: 8 for 64-bit hashes)
+        window_size: Frames per window (default: 60 = ~2 seconds at 30fps)
+        fps: Frames per second for timestamp calculation (default: 30.0)
+
+    Returns:
+        Dictionary with comparison results:
+        {
+            'frame_count': int,
+            'window_count': int,
+            'worst_window_mean_distance': float,  # Maximum mean distance across all windows
+            'overall_mean_distance': float,       # Mean across entire video (for reference)
+            'max_frame_distance': int,            # Worst individual frame
+            'perfect_match_pct': float,           # % of frames with perfect match
+            'is_valid': bool,                     # True if worst window < threshold
+            'worst_windows': list[dict],          # Top 3 worst windows with details
+        }
+    """
+    bytes_per_hash = hash_size  # 8 bytes for 64-bit hash
+
+    # Validate inputs
+    if len(computed_data) != len(stored_data):
+        return {
+            'is_valid': False,
+            'error': f'Hash data length mismatch: {len(computed_data)} vs {len(stored_data)} bytes'
+        }
+
+    if len(computed_data) % bytes_per_hash != 0:
+        return {
+            'is_valid': False,
+            'error': f'Invalid hash data length: {len(computed_data)} (not multiple of {bytes_per_hash})'
+        }
+
+    frame_count = len(computed_data) // bytes_per_hash
+
+    # Compute frame-by-frame Hamming distances
+    distances = []
+    perfect_matches = 0
+
+    for i in range(frame_count):
+        offset = i * bytes_per_hash
+
+        # Unpack 8-byte hash as unsigned 64-bit little-endian integer
+        computed_hash = struct.unpack('<Q', computed_data[offset:offset + bytes_per_hash])[0]
+        stored_hash = struct.unpack('<Q', stored_data[offset:offset + bytes_per_hash])[0]
+
+        # Calculate Hamming distance
+        distance = hamming_distance(computed_hash, stored_hash)
+        distances.append(distance)
+
+        if distance == 0:
+            perfect_matches += 1
+
+    distances_array = np.array(distances)
+
+    # Compute window-based metrics using non-overlapping windows
+    window_means = []
+    window_info = []
+
+    for start_frame in range(0, frame_count, window_size):
+        end_frame = min(start_frame + window_size, frame_count)
+        window_distances = distances_array[start_frame:end_frame]
+        window_mean = np.mean(window_distances)
+        window_max = np.max(window_distances)
+
+        # Find the frame with maximum distance within this window
+        max_distance_idx = np.argmax(window_distances)
+        max_distance_frame = start_frame + max_distance_idx
+        max_distance_time = max_distance_frame / fps
+
+        window_means.append(window_mean)
+
+        # Format timestamps
+        start_time = start_frame / fps
+        end_time = end_frame / fps
+
+        window_info.append({
+            'start_frame': start_frame,
+            'end_frame': end_frame,
+            'start_time': f"{int(start_time // 60):02d}:{int(start_time % 60):02d}",
+            'end_time': f"{int(end_time // 60):02d}:{int(end_time % 60):02d}",
+            'mean_distance': round(float(window_mean), 2),
+            'max_distance': int(window_max),
+            'max_distance_frame': max_distance_frame,
+            'max_distance_time': f"{int(max_distance_time // 60):02d}:{int(max_distance_time % 60):02d}",
+        })
+
+    # Sort windows by mean distance (worst first) and take top 3
+    worst_windows = sorted(window_info, key=lambda w: w['mean_distance'], reverse=True)[:3]
+
+    # Verification metric: worst window mean distance
+    worst_window_mean = max(window_means)
+    overall_mean_distance = np.mean(distances_array)
+    max_frame_distance = int(np.max(distances_array))
+    perfect_match_pct = (perfect_matches / frame_count) * 100
+
+    # Threshold: Worst window mean should be very low for authentic videos
+    # Even with re-encoding, perceptual hashes should differ by only 1-3 bits on average per window
+    # Tampered windows will have much higher distances (10-30+ bits)
+    threshold = 5.0  # bits
+    is_valid = worst_window_mean < threshold
+
+    return {
+        'frame_count': frame_count,
+        'window_count': len(window_means),
+        'worst_window_mean_distance': round(worst_window_mean, 2),
+        'overall_mean_distance': round(float(overall_mean_distance), 2),
+        'max_frame_distance': max_frame_distance,
+        'perfect_match_pct': round(perfect_match_pct, 2),
+        'is_valid': is_valid,
+        'threshold_bits': threshold,
+        'worst_windows': worst_windows,
+    }
+
+
+def compare_frame_statistics(
+    computed_stats: list[dict],
+    stored_stats: list[dict],
+    window_size: int = 60,
+    fps: float = 30.0,
+) -> dict[str, Any]:
+    """Compare frame-by-frame YUV statistics using windowed analysis.
+
+    Uses non-overlapping 60-frame windows (~2 seconds at 30fps) to detect localized
+    tampering. Takes the WORST (minimum) correlation and WORST (maximum) MAD across
+    all windows as the verification metrics.
+
+    Args:
+        computed_stats: Frame stats from video being verified
+        stored_stats: Frame stats from original package
+        window_size: Frames per window (default: 60 = ~2 seconds at 30fps)
+        fps: Frames per second for timestamp calculation (default: 30.0)
+
+    Returns:
+        Dictionary with comparison results:
+        {
+            'frame_count': int,
+            'window_count': int,
+            'worst_window_correlation': float,  # Minimum correlation across all windows
+            'worst_window_mad': float,          # Maximum MAD across all windows
+            'overall_correlation': float,       # Correlation across entire video (for reference)
+            'overall_mad': float,               # MAD across entire video (for reference)
+            'is_valid': bool,                   # True if worst window passes thresholds
+            'worst_windows': list[dict],        # Top 3 worst windows with details
+        }
+    """
+    # Validate inputs
+    if len(computed_stats) != len(stored_stats):
+        return {
+            'is_valid': False,
+            'error': f'Frame count mismatch: {len(computed_stats)} vs {len(stored_stats)}'
+        }
+
+    if len(computed_stats) == 0:
+        return {
+            'is_valid': False,
+            'error': 'No frame statistics to compare'
+        }
+
+    frame_count = len(computed_stats)
+    channels = ['y_mean', 'y_std', 'u_mean', 'u_std', 'v_mean', 'v_std']
+
+    # Extract all channel values as arrays
+    computed_arrays = {}
+    stored_arrays = {}
+    for channel in channels:
+        computed_arrays[channel] = np.array([frame[channel] for frame in computed_stats])
+        stored_arrays[channel] = np.array([frame[channel] for frame in stored_stats])
+
+    # Compute window-based metrics using non-overlapping windows
+    window_correlations = []
+    window_mads = []
+    window_info = []
+
+    for start_frame in range(0, frame_count, window_size):
+        end_frame = min(start_frame + window_size, frame_count)
+
+        # Compute metrics for this window across all channels
+        window_channel_correlations = []
+        window_channel_mads = []
+
+        for channel in channels:
+            computed_window = computed_arrays[channel][start_frame:end_frame]
+            stored_window = stored_arrays[channel][start_frame:end_frame]
+
+            # Correlation for this channel in this window
+            if len(computed_window) > 1:  # Need at least 2 points for correlation
+                correlation = np.corrcoef(computed_window, stored_window)[0, 1]
+                # Handle NaN case (constant values)
+                if np.isnan(correlation):
+                    correlation = 1.0 if np.allclose(computed_window, stored_window) else 0.0
+            else:
+                correlation = 1.0 if np.allclose(computed_window, stored_window) else 0.0
+
+            window_channel_correlations.append(correlation)
+
+            # MAD for this channel in this window
+            mad = np.mean(np.abs(computed_window - stored_window))
+            window_channel_mads.append(mad)
+
+        # Average across all channels for this window
+        window_mean_correlation = np.mean(window_channel_correlations)
+        window_mean_mad = np.mean(window_channel_mads)
+
+        # Find worst frame in window (highest average MAD across all channels)
+        frame_mads = []
+        for i in range(start_frame, end_frame):
+            frame_mad_sum = sum(
+                abs(computed_arrays[ch][i] - stored_arrays[ch][i])
+                for ch in channels
+            )
+            frame_mads.append(frame_mad_sum / len(channels))
+
+        max_mad_idx = np.argmax(frame_mads)
+        max_mad_frame = start_frame + max_mad_idx
+        max_mad_value = frame_mads[max_mad_idx]
+        max_mad_time = max_mad_frame / fps
+
+        window_correlations.append(window_mean_correlation)
+        window_mads.append(window_mean_mad)
+
+        # Format timestamps
+        start_time = start_frame / fps
+        end_time = end_frame / fps
+
+        window_info.append({
+            'start_frame': start_frame,
+            'end_frame': end_frame,
+            'start_time': f"{int(start_time // 60):02d}:{int(start_time % 60):02d}",
+            'end_time': f"{int(end_time // 60):02d}:{int(end_time % 60):02d}",
+            'correlation': round(float(window_mean_correlation), 4),
+            'mad': round(float(window_mean_mad), 2),
+            'max_mad_frame': max_mad_frame,
+            'max_mad_value': round(float(max_mad_value), 2),
+            'max_mad_time': f"{int(max_mad_time // 60):02d}:{int(max_mad_time % 60):02d}",
+        })
+
+    # Sort windows by correlation (lowest first) and take top 3 worst
+    worst_windows = sorted(window_info, key=lambda w: w['correlation'])[:3]
+
+    # Verification metrics: worst window correlation (lowest) and worst window MAD (highest)
+    worst_window_correlation = min(window_correlations)
+    worst_window_mad = max(window_mads)
+
+    # Overall metrics for reference
+    overall_correlations = []
+    overall_mads = []
+    for channel in channels:
+        overall_corr = np.corrcoef(computed_arrays[channel], stored_arrays[channel])[0, 1]
+        if np.isnan(overall_corr):
+            overall_corr = 1.0 if np.allclose(computed_arrays[channel], stored_arrays[channel]) else 0.0
+        overall_correlations.append(overall_corr)
+
+        overall_mad = np.mean(np.abs(computed_arrays[channel] - stored_arrays[channel]))
+        overall_mads.append(overall_mad)
+
+    overall_correlation = np.mean(overall_correlations)
+    overall_mad = np.mean(overall_mads)
+
+    # Thresholds:
+    # - Correlation should be very high (>0.90) even in worst window
+    # - MAD should be low (<0.8) even in worst window
+    # Tighter MAD threshold reduces noise and focuses on true tampering
+    correlation_threshold = 0.90
+    mad_threshold = 0.8
+
+    is_valid = (worst_window_correlation >= correlation_threshold and worst_window_mad < mad_threshold)
+
+    return {
+        'frame_count': frame_count,
+        'window_count': len(window_correlations),
+        'worst_window_correlation': round(worst_window_correlation, 4),
+        'worst_window_mad': round(worst_window_mad, 2),
+        'overall_correlation': round(float(overall_correlation), 4),
+        'overall_mad': round(float(overall_mad), 2),
+        'is_valid': is_valid,
+        'correlation_threshold': correlation_threshold,
+        'mad_threshold': mad_threshold,
+        'worst_windows': worst_windows,
     }

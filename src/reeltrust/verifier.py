@@ -6,7 +6,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from reeltrust.fingerprints import compute_dhash, compute_frame_statistics, compute_phash
+from reeltrust.fingerprints import (
+    compare_frame_statistics,
+    compare_perceptual_hashes,
+    compute_dhash,
+    compute_frame_statistics,
+    compute_phash,
+)
 from reeltrust.signature import calculate_manifest_hash, load_manifest, load_signature
 from reeltrust.video_processor import compress_video, hash_file
 
@@ -624,6 +630,62 @@ def compute_and_compare_fingerprints(
             result['stored']['frame_stats'] = stored_stats
             result['stored']['frame_count'] = len(stored_stats)
             print(f"    - Frame statistics: {len(stored_stats)} frames")
+
+        # Perform comparisons if we have both computed and stored fingerprints
+        print("\n  Comparing fingerprints...")
+        result['comparisons'] = {}
+
+        # Compare dHash
+        if 'dhash' in result['stored'] and 'dhash' in result['computed']:
+            dhash_comparison = compare_perceptual_hashes(
+                result['computed']['dhash'],
+                result['stored']['dhash']
+            )
+            result['comparisons']['dhash'] = dhash_comparison
+
+            if 'error' in dhash_comparison:
+                print(f"    ✗ dHash: {dhash_comparison['error']}")
+            elif dhash_comparison['is_valid']:
+                print(f"    ✓ dHash: Worst window {dhash_comparison['worst_window_mean_distance']:.2f} bits, "
+                      f"{dhash_comparison['perfect_match_pct']:.1f}% perfect matches")
+            else:
+                print(f"    ✗ dHash: Worst window {dhash_comparison['worst_window_mean_distance']:.2f} bits "
+                      f"exceeds threshold ({dhash_comparison['threshold_bits']} bits)")
+
+        # Compare pHash
+        if 'phash' in result['stored'] and 'phash' in result['computed']:
+            phash_comparison = compare_perceptual_hashes(
+                result['computed']['phash'],
+                result['stored']['phash']
+            )
+            result['comparisons']['phash'] = phash_comparison
+
+            if 'error' in phash_comparison:
+                print(f"    ✗ pHash: {phash_comparison['error']}")
+            elif phash_comparison['is_valid']:
+                print(f"    ✓ pHash: Worst window {phash_comparison['worst_window_mean_distance']:.2f} bits, "
+                      f"{phash_comparison['perfect_match_pct']:.1f}% perfect matches")
+            else:
+                print(f"    ✗ pHash: Worst window {phash_comparison['worst_window_mean_distance']:.2f} bits "
+                      f"exceeds threshold ({phash_comparison['threshold_bits']} bits)")
+
+        # Compare frame statistics
+        if 'frame_stats' in result['stored'] and 'frame_stats' in result['computed']:
+            stats_comparison = compare_frame_statistics(
+                result['computed']['frame_stats'],
+                result['stored']['frame_stats']
+            )
+            result['comparisons']['frame_stats'] = stats_comparison
+
+            if 'error' in stats_comparison:
+                print(f"    ✗ Frame Statistics: {stats_comparison['error']}")
+            elif stats_comparison['is_valid']:
+                print(f"    ✓ Frame Statistics: Worst window correlation {stats_comparison['worst_window_correlation']:.4f}, "
+                      f"MAD {stats_comparison['worst_window_mad']:.2f}")
+            else:
+                print(f"    ✗ Frame Statistics: Worst window correlation {stats_comparison['worst_window_correlation']:.4f} "
+                      f"or MAD {stats_comparison['worst_window_mad']:.2f} outside thresholds")
+
     else:
         print("\n  No stored fingerprints found in package (package may be from older version)")
 
@@ -805,8 +867,37 @@ def verify_video_digest(
             print("\n⚠️  Package does not contain fingerprints (may be from older version)")
             print("   Fingerprint verification skipped.")
         else:
-            print("\n✓ Fingerprint data computed and loaded successfully")
-            print("   (Comparison algorithms not yet implemented)")
+            # Add fingerprint checks to the verification result
+            comparisons = fingerprint_data.get('comparisons', {})
+
+            if 'dhash' in comparisons:
+                dhash_result = comparisons['dhash']
+                checks["dhash_match"] = dhash_result.get('is_valid', False)
+                if not checks["dhash_match"] and 'error' not in dhash_result:
+                    errors.append(
+                        f"dHash check failed: worst window mean {dhash_result.get('worst_window_mean_distance', 'N/A')} bits "
+                        f"exceeds threshold {dhash_result.get('threshold_bits', 'N/A')} bits"
+                    )
+
+            if 'phash' in comparisons:
+                phash_result = comparisons['phash']
+                checks["phash_match"] = phash_result.get('is_valid', False)
+                if not checks["phash_match"] and 'error' not in phash_result:
+                    errors.append(
+                        f"pHash check failed: worst window mean {phash_result.get('worst_window_mean_distance', 'N/A')} bits "
+                        f"exceeds threshold {phash_result.get('threshold_bits', 'N/A')} bits"
+                    )
+
+            if 'frame_stats' in comparisons:
+                stats_result = comparisons['frame_stats']
+                checks["frame_stats_match"] = stats_result.get('is_valid', False)
+                if not checks["frame_stats_match"] and 'error' not in stats_result:
+                    errors.append(
+                        f"Frame statistics check failed: worst window correlation {stats_result.get('worst_window_correlation', 'N/A')} "
+                        f"or MAD {stats_result.get('worst_window_mad', 'N/A')} outside acceptable thresholds"
+                    )
+
+            print("")
 
         print("=" * 60 + "\n")
     except Exception as e:

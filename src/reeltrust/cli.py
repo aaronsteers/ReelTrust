@@ -188,6 +188,92 @@ def verify(
                     else:
                         print_output(f"  {formatted_key}: {value}")
 
+            # Display fingerprint comparison results if available
+            if "fingerprints" in result.details:
+                fingerprint_data = result.details["fingerprints"]
+                comparisons = fingerprint_data.get("comparisons", {})
+
+                if comparisons:
+                    print_output("\n### Fingerprint Analysis\n")
+
+                    # dHash results
+                    if "dhash" in comparisons:
+                        dhash = comparisons["dhash"]
+                        if "error" in dhash:
+                            print_output(f"  **dHash:** ✗ {dhash['error']}")
+                        else:
+                            status = "✓" if dhash.get("is_valid", False) else "✗"
+                            print_output(f"  **dHash:** {status}")
+                            print_output(f"    - Worst Window Mean: {dhash.get('worst_window_mean_distance', 'N/A')} bits "
+                                       f"(threshold: <{dhash.get('threshold_bits', 'N/A')})")
+                            print_output(f"    - Overall Mean: {dhash.get('overall_mean_distance', 'N/A')} bits")
+                            print_output(f"    - Perfect Matches: {dhash.get('perfect_match_pct', 'N/A')}%")
+
+                    # pHash results
+                    if "phash" in comparisons:
+                        phash = comparisons["phash"]
+                        if "error" in phash:
+                            print_output(f"  **pHash:** ✗ {phash['error']}")
+                        else:
+                            status = "✓" if phash.get("is_valid", False) else "✗"
+                            print_output(f"  **pHash:** {status}")
+                            print_output(f"    - Worst Window Mean: {phash.get('worst_window_mean_distance', 'N/A')} bits "
+                                       f"(threshold: <{phash.get('threshold_bits', 'N/A')})")
+                            print_output(f"    - Overall Mean: {phash.get('overall_mean_distance', 'N/A')} bits")
+                            print_output(f"    - Perfect Matches: {phash.get('perfect_match_pct', 'N/A')}%")
+
+                    # Frame statistics results
+                    if "frame_stats" in comparisons:
+                        stats = comparisons["frame_stats"]
+                        if "error" in stats:
+                            print_output(f"  **Frame Statistics:** ✗ {stats['error']}")
+                        else:
+                            status = "✓" if stats.get("is_valid", False) else "✗"
+                            print_output(f"  **Frame Statistics:** {status}")
+                            print_output(f"    - Worst Window Correlation: {stats.get('worst_window_correlation', 'N/A')} "
+                                       f"(threshold: ≥{stats.get('correlation_threshold', 'N/A')})")
+                            print_output(f"    - Worst Window MAD: {stats.get('worst_window_mad', 'N/A')} "
+                                       f"(threshold: <{stats.get('mad_threshold', 'N/A')})")
+                            print_output(f"    - Overall Correlation: {stats.get('overall_correlation', 'N/A')}")
+
+                    # Display worst windows for each fingerprint type
+                    if "dhash" in comparisons and "worst_windows" in comparisons["dhash"]:
+                        dhash_windows = comparisons["dhash"]["worst_windows"]
+                        if dhash_windows:
+                            print_output("\n#### dHash Worst Windows (highest Hamming distance)\n")
+                            for i, window in enumerate(dhash_windows, 1):
+                                print_output(
+                                    f"  {i}. Frames {window['start_frame']}-{window['end_frame']} "
+                                    f"({window['start_time']} - {window['end_time']}): "
+                                    f"Avg: {window['mean_distance']} bits, "
+                                    f"Max: {window['max_distance']} bits at {window['max_distance_time']}"
+                                )
+
+                    if "phash" in comparisons and "worst_windows" in comparisons["phash"]:
+                        phash_windows = comparisons["phash"]["worst_windows"]
+                        if phash_windows:
+                            print_output("\n#### pHash Worst Windows (highest Hamming distance)\n")
+                            for i, window in enumerate(phash_windows, 1):
+                                print_output(
+                                    f"  {i}. Frames {window['start_frame']}-{window['end_frame']} "
+                                    f"({window['start_time']} - {window['end_time']}): "
+                                    f"Avg: {window['mean_distance']} bits, "
+                                    f"Max: {window['max_distance']} bits at {window['max_distance_time']}"
+                                )
+
+                    if "frame_stats" in comparisons and "worst_windows" in comparisons["frame_stats"]:
+                        stats_windows = comparisons["frame_stats"]["worst_windows"]
+                        if stats_windows:
+                            print_output("\n#### Frame Statistics Worst Windows (lowest correlation)\n")
+                            for i, window in enumerate(stats_windows, 1):
+                                print_output(
+                                    f"  {i}. Frames {window['start_frame']}-{window['end_frame']} "
+                                    f"({window['start_time']} - {window['end_time']}): "
+                                    f"Correlation: {window['correlation']}, "
+                                    f"MAD: {window['mad']}, "
+                                    f"Max MAD: {window['max_mad_value']} at {window['max_mad_time']}"
+                                )
+
             # Display worst windows if SSIM was computed
             if "worst_windows" in result.details:
                 worst_windows = result.details["worst_windows"]
