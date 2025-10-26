@@ -28,6 +28,7 @@ def create_manifest(
     audio_fingerprint_hash: str,
     metadata_hash: str,
     digest_properties: dict[str, Any] | None = None,
+    fingerprint_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Create a manifest containing all file hashes and references.
@@ -39,6 +40,7 @@ def create_manifest(
         audio_fingerprint_hash: SHA-256 hash of audio fingerprint JSON
         metadata_hash: SHA-256 hash of metadata JSON
         digest_properties: Optional dict with frame_count, fps, duration (for optimization)
+        fingerprint_metadata: Optional dict with perceptual fingerprint metadata
 
     Returns:
         Manifest dictionary
@@ -76,6 +78,10 @@ def create_manifest(
             "description": "SHA-256 hash of the original source video",
         },
     }
+
+    # Add fingerprint metadata if provided
+    if fingerprint_metadata:
+        manifest["fingerprints"] = fingerprint_metadata
 
     return manifest
 

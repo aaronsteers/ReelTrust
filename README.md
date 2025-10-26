@@ -28,15 +28,13 @@ See [docs/SPEC.md](docs/SPEC.md) for a full specification and writeup.
 ### Create a Signed Package
 
 ```bash
-reeltrust sign ./my_video.mp4 --user "creator@example.com" --gps "37.7749,-122.4194"
+reeltrust create-package ./my_video.mp4 --user "creator@example.com" --gps "37.7749,-122.4194"
 ```
 
 **Options:**
 
-- `-o, --output` - Output directory (default: `.data/outputs`)
 - `-u, --user` - User identity (username, email, etc.)
 - `-g, --gps` - GPS coordinates as `'latitude,longitude'`
-- `-w, --width` - Compressed video width (default: 240)
 
 This command:
 
@@ -55,11 +53,6 @@ Returns a verification package directory for later verification.
 ```bash
 reeltrust verify ./my_video.mp4 ./my_video_package/
 ```
-
-**Options:**
-
-- `-w, --width` - Width for compressed digest (default: 240)
-- `-t, --threshold` - Minimum SSIM threshold for validation (default: 0.99)
 
 **Verification Process:**
 

@@ -10,7 +10,7 @@ This document tracks technical debt and future enhancements accumulated during t
 1. **Audio Fingerprinting** - Using Chromaprint/AcoustID for audio fingerprinting
 1. **Metadata Generation** - Extract and store video metadata, timestamps, user identity
 1. **Signature Generation** - SHA-256 hashing of manifest (placeholder for future cryptographic signing)
-1. **CLI Tool** - `reeltrust sign` command to create verification packages
+1. **CLI Tool** - `reeltrust create-package` command to create verification packages
 1. **Package Structure** - Organized output with manifest, metadata, digest video, audio fingerprint, and signature
 
 ### 🔧 Known Technical Debt
@@ -25,8 +25,8 @@ This document tracks technical debt and future enhancements accumulated during t
    - **Location**: `src/reeltrust/signature.py` - `create_signature()` function
    - **Note**: Added reminder in signature.json output
 1. **Verification Functionality**
-   - **Current**: Only signing is implemented
-   - **Future**: Implement `reeltrust check` command to verify packages
+   - **Current**: `reeltrust verify` command implemented with SSIM comparison
+   - **Future**: Integrate perceptual fingerprint verification (dHash, pHash, frame stats)
    - **Future**: Compare video hashes, audio fingerprints, validate signatures
    - **Future**: Return PASS/FAIL + human-readable explanations
 1. **S3 Upload Integration**
@@ -106,12 +106,15 @@ sample-vid_package/
 
 ## Future Milestones
 
-### Phase 2: Verification
+### Phase 2: Verification (✅ Mostly Complete)
 
-- Implement `reeltrust check` command
-- Video and audio matching logic
-- Signature verification
-- Visual verification reports
+- ✅ Implement `reeltrust verify` command
+- ✅ Video matching via SSIM with sliding window analysis
+- ✅ Audit clip extraction for worst-quality windows
+- ✅ Side-by-side comparison videos
+- ✅ Perceptual fingerprints (dHash, pHash, frame statistics)
+- 🔲 Audio fingerprint verification
+- 🔲 Signature verification
 
 ### Phase 3: S3 Integration
 

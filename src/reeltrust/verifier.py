@@ -1,10 +1,12 @@
 """Video digest verification module for ReelTrust."""
 
+import json
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from reeltrust.fingerprints import compute_dhash, compute_frame_statistics, compute_phash
 from reeltrust.signature import calculate_manifest_hash, load_manifest, load_signature
 from reeltrust.video_processor import compress_video, hash_file
 
@@ -534,6 +536,100 @@ def get_video_properties(video_path: Path) -> dict[str, Any]:
     }
 
 
+def compute_and_compare_fingerprints(
+    video_path: Path,
+    package_path: Path,
+) -> dict[str, Any]:
+    """
+    Compute fingerprints from the provided video and compare with stored fingerprints.
+
+    Args:
+        video_path: Path to the video file to verify
+        package_path: Path to the verification package directory
+
+    Returns:
+        Dictionary with fingerprint comparison data:
+        {
+            'computed': {
+                'dhash': bytes,
+                'phash': bytes,
+                'frame_stats': list[dict],
+                'frame_count': int,
+                'compute_time_ms': float
+            },
+            'stored': {
+                'dhash': bytes,
+                'phash': bytes,
+                'frame_stats': list[dict],
+                'frame_count': int
+            },
+            'has_stored_fingerprints': bool
+        }
+    """
+    result = {
+        'computed': {},
+        'stored': {},
+        'has_stored_fingerprints': False
+    }
+
+    # Compute fingerprints from the provided video
+    print("  Computing perceptual fingerprints from provided video...")
+
+    import time
+    start_time = time.time()
+
+    dhash_data, dhash_time, dhash_frames = compute_dhash(video_path)
+    print(f"    - dHash: {dhash_time:.0f}ms ({len(dhash_data):,} bytes, {dhash_frames} frames)")
+
+    phash_data, phash_time, phash_frames = compute_phash(video_path)
+    print(f"    - pHash: {phash_time:.0f}ms ({len(phash_data):,} bytes, {phash_frames} frames)")
+
+    stats_data, stats_time, stats_frames = compute_frame_statistics(video_path)
+    print(f"    - Frame statistics: {stats_time:.0f}ms ({stats_frames} frames)")
+
+    total_time = (time.time() - start_time) * 1000
+
+    result['computed'] = {
+        'dhash': dhash_data,
+        'phash': phash_data,
+        'frame_stats': stats_data,
+        'frame_count': dhash_frames,
+        'compute_time_ms': round(total_time, 2)
+    }
+    print(f"  Total compute time: {total_time:.0f}ms")
+
+    # Load stored fingerprints from package if they exist
+    fingerprints_dir = package_path / "fingerprints"
+    if fingerprints_dir.exists():
+        print("\n  Loading stored fingerprints from package...")
+        result['has_stored_fingerprints'] = True
+
+        dhash_path = fingerprints_dir / "dhash.bin"
+        phash_path = fingerprints_dir / "phash.bin"
+        stats_path = fingerprints_dir / "frame_stats.json"
+
+        if dhash_path.exists():
+            stored_dhash = dhash_path.read_bytes()
+            result['stored']['dhash'] = stored_dhash
+            print(f"    - dHash: {len(stored_dhash):,} bytes")
+
+        if phash_path.exists():
+            stored_phash = phash_path.read_bytes()
+            result['stored']['phash'] = stored_phash
+            print(f"    - pHash: {len(stored_phash):,} bytes")
+
+        if stats_path.exists():
+            with open(stats_path) as f:
+                stored_stats = json.load(f)
+            result['stored']['frame_stats'] = stored_stats
+            result['stored']['frame_count'] = len(stored_stats)
+            print(f"    - Frame statistics: {len(stored_stats)} frames")
+    else:
+        print("\n  No stored fingerprints found in package (package may be from older version)")
+
+    return result
+
+
 def verify_video_digest(
     video_path: Path,
     package_path: Path,
@@ -696,6 +792,27 @@ def verify_video_digest(
         checks["digest_recreation"] = False
         errors.append(f"Failed to recreate digest video: {e!s}")
         return VerificationResult(False, checks, details, errors)
+
+    # Step 7: Compute and compare perceptual fingerprints
+    print("\n" + "=" * 60)
+    print("Perceptual Fingerprint Analysis")
+    print("=" * 60)
+    try:
+        fingerprint_data = compute_and_compare_fingerprints(video_path, package_path)
+        details["fingerprints"] = fingerprint_data
+
+        if not fingerprint_data['has_stored_fingerprints']:
+            print("\n⚠️  Package does not contain fingerprints (may be from older version)")
+            print("   Fingerprint verification skipped.")
+        else:
+            print("\n✓ Fingerprint data computed and loaded successfully")
+            print("   (Comparison algorithms not yet implemented)")
+
+        print("=" * 60 + "\n")
+    except Exception as e:
+        print(f"\n⚠️  Failed to compute fingerprints: {e!s}")
+        print("   Continuing with SSIM-based verification only")
+        print("=" * 60 + "\n")
 
     # Overall validation: determine if video is valid
     # We accept either:

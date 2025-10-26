@@ -6,6 +6,8 @@ from pathlib import Path
 
 import click
 
+from ulid import ULID
+
 from .signer import sign_video
 from .verifier import (
     create_side_by_side_clip,
@@ -13,6 +15,24 @@ from .verifier import (
     merge_overlapping_windows,
     verify_video_digest,
 )
+
+# Global report file handle for the current verification job
+_report_file = None
+
+
+def print_output(message: str = ""):
+    """Print to console and append to verification report file.
+
+    Args:
+        message: The message to print (plain text or markdown)
+    """
+    # Print to console
+    click.echo(message)
+
+    # Append to report file
+    if _report_file and not _report_file.closed:
+        _report_file.write(message + "\n")
+        _report_file.flush()
 
 
 @click.group()
@@ -22,17 +42,10 @@ def cli():
     pass
 
 
-@cli.command()
+@cli.command(name="create-package")
 @click.argument(
     "video_path",
     type=click.Path(exists=True, path_type=Path),
-)
-@click.option(
-    "-o",
-    "--output",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Output directory for the verification package (default: .data/outputs/reel-trust-packages/{video_name}).",
 )
 @click.option(
     "-u",
@@ -46,20 +59,10 @@ def cli():
     type=str,
     help="GPS coordinates as 'latitude,longitude' (e.g., '37.7749,-122.4194').",
 )
-@click.option(
-    "-w",
-    "--width",
-    type=int,
-    default=240,
-    help="Width for compressed video digest.",
-    show_default=True,
-)
-def sign(
+def create_package(
     video_path: Path,
-    output: Path,
     user: str | None,
     gps: str | None,
-    width: int,
 ):
     """Create a signed verification package for a video file."""
     try:
@@ -79,22 +82,16 @@ def sign(
                 )
                 sys.exit(1)
 
-        # Determine output directory with deterministic naming
-        # Note: sign_video creates a subdirectory named {video}_package inside output_dir
-        if output is None:
-            # Default: .data/outputs/reel-trust-packages/
-            # This will create .data/outputs/reel-trust-packages/{video}_package/
-            output_dir = Path(".data/outputs/reel-trust-packages")
-        else:
-            output_dir = output
+        # Use default output directory
+        output_dir = Path(".data/outputs/reel-trust-packages")
 
-        # Create the signed package
+        # Create the signed package with default compression width
         package_dir = sign_video(
             video_path=video_path,
             output_dir=output_dir,
             user_identity=user,
             gps_coords=gps_coords,
-            compression_width=width,
+            compression_width=240,
         )
 
         click.echo(f"\n✓ Success! Package created at: {package_dir}")
@@ -119,183 +116,186 @@ def sign(
     "package_path",
     type=click.Path(exists=True, path_type=Path),
 )
-@click.option(
-    "-w",
-    "--width",
-    type=int,
-    default=240,
-    help="Width for compressed video digest.",
-    show_default=True,
-)
-@click.option(
-    "-t",
-    "--threshold",
-    type=float,
-    default=0.99,
-    help="Minimum SSIM threshold for validation.",
-    show_default=True,
-)
-@click.option(
-    "--clips-dir",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Directory to save clips (default: .data/outputs/audit-clips).",
-)
 def verify(
     video_path: Path,
     package_path: Path,
-    width: int,
-    threshold: float,
-    clips_dir: Path | None,
 ):
     """Verify a video against its verification package."""
+    global _report_file
+
     try:
-        click.echo(f"Verifying video: {video_path}")
-        click.echo(f"Against package: {package_path}")
-        click.echo("This may take a moment...\n")
+        # Generate ULID for this verification job
+        job_ulid = ULID()
+        ulid_str = str(job_ulid)[-8:]  # Use last 8 characters
+        video_basename = video_path.stem
 
-        # Perform verification
-        result = verify_video_digest(
-            video_path=video_path,
-            package_path=package_path,
-            compression_width=width,
-            ssim_threshold=threshold,
-        )
+        # Create verification output directory: .data/outputs/verification/{ulid}-{basename}/
+        verification_dir = Path(".data/outputs/verification") / f"{ulid_str}-{video_basename}"
+        verification_dir.mkdir(parents=True, exist_ok=True)
 
-        # Display results
-        if result.is_valid:
-            click.echo(click.style("\n✓ VERIFICATION PASSED", fg="green", bold=True))
-            click.echo(
-                "The video digest is authentic and matches the original video.\n"
+        # Open report file for this verification job
+        report_path = verification_dir / "verification_report.md"
+        _report_file = open(report_path, "w", encoding="utf-8")
+
+        try:
+            print_output(f"# Verification Report\n")
+            print_output(f"**Job ID:** {ulid_str}")
+            print_output(f"**Video:** {video_path}")
+            print_output(f"**Package:** {package_path}")
+            print_output(f"**Output Directory:** {verification_dir}")
+            print_output(f"\n---\n")
+
+            print_output(f"Verifying video: {video_path}")
+            print_output(f"Against package: {package_path}")
+            print_output(f"Verification output: {verification_dir}")
+            print_output("This may take a moment...\n")
+
+            # Perform verification with default compression width and threshold
+            # Note: Threshold of 0.92 allows re-encoding (typically 0.93+) while catching tampering (typically <0.92)
+            result = verify_video_digest(
+                video_path=video_path,
+                package_path=package_path,
+                compression_width=240,
+                ssim_threshold=0.92,
             )
-        else:
-            click.echo(click.style("\n✗ VERIFICATION FAILED", fg="red", bold=True))
-            click.echo("The video digest does not match or has been tampered with.\n")
 
-        # Display detailed checks
-        click.echo("Verification Checks:")
-        for check_name, passed in result.checks.items():
-            status_symbol = (
-                click.style("✓", fg="green") if passed else click.style("✗", fg="red")
-            )
-            formatted_name = check_name.replace("_", " ").title()
-            click.echo(f"  {status_symbol} {formatted_name}")
+            # Display results
+            print_output("\n## Verification Result\n")
+            if result.is_valid:
+                print_output("**✓ VERIFICATION PASSED**")
+                print_output("The video digest is authentic and matches the original video.\n")
+            else:
+                print_output("**✗ VERIFICATION FAILED**")
+                print_output("The video digest does not match or has been tampered with.\n")
 
-        # Display details if available
-        if result.details:
-            click.echo("\nDetails:")
-            for key, value in result.details.items():
-                # Skip worst_windows - we'll display it separately
-                if key == "worst_windows":
-                    continue
-                formatted_key = key.replace("_", " ").title()
-                if isinstance(value, float):
-                    click.echo(f"  {formatted_key}: {value:.4f}")
-                else:
-                    click.echo(f"  {formatted_key}: {value}")
+            # Display detailed checks
+            print_output("### Verification Checks\n")
+            for check_name, passed in result.checks.items():
+                status = "✓" if passed else "✗"
+                formatted_name = check_name.replace("_", " ").title()
+                print_output(f"  {status} {formatted_name}")
 
-        # Display worst windows if SSIM was computed
-        if "worst_windows" in result.details:
-            worst_windows = result.details["worst_windows"]
-            if worst_windows:
-                click.echo("\nWorst Quality Windows (lowest SSIM scores):")
-                for i, window in enumerate(worst_windows, 1):
-                    if 'min_ssim' in window and 'min_ssim_time' in window:
-                        min_ssim_str = f", Min: {window['min_ssim']:.4f} at {window['min_ssim_time']}"
+            # Display details if available
+            print_output("\n### Details\n")
+            if result.details:
+                for key, value in result.details.items():
+                    # Skip worst_windows and fingerprints - we'll display them separately
+                    if key in ("worst_windows", "fingerprints"):
+                        continue
+                    formatted_key = key.replace("_", " ").title()
+                    if isinstance(value, float):
+                        print_output(f"  {formatted_key}: {value:.4f}")
                     else:
-                        min_ssim_str = ""
-                    click.echo(
-                        f"  {i}. Frames {window['start_frame']}-{window['end_frame']} "
-                        f"({window['start_time']} - {window['end_time']}): "
-                        f"Avg: {window['ssim']:.4f}{min_ssim_str}"
-                    )
+                        print_output(f"  {formatted_key}: {value}")
 
-                # Always extract clips for inspection
-                click.echo("\nExtracting video clips for inspection...")
-
-                # Determine clips directory and include video basename
-                base_clips_dir = clips_dir if clips_dir else Path(".data/outputs/audit-clips")
-                video_basename = video_path.stem  # Filename without extension
-                output_dir = base_clips_dir / video_basename
-
-                # Clear existing clips for this video to avoid confusion
-                if output_dir.exists():
-                    shutil.rmtree(output_dir)
-
-                output_dir.mkdir(parents=True, exist_ok=True)
-
-                # Merge overlapping windows into consolidated clips
-                merged_clips = merge_overlapping_windows(worst_windows)
-
-                # Get the stored digest video from the package for comparison
-                stored_digest_path = package_path / "digest_video.mp4"
-
-                # Extract each clip
-                for i, clip in enumerate(merged_clips, 1):
-                    start_time = clip["start_time"]
-                    duration = clip["end_time"] - clip["start_time"]
-
-                    # Format filename with timestamp
-                    start_str = clip["windows"][0]["start_time"].replace(":", "-")
-                    clip_filename = f"clip_{i:02d}_at_{start_str}.mp4"
-                    comparison_filename = f"comparison_{i:02d}_at_{start_str}.mp4"
-                    clip_path = output_dir / clip_filename
-                    comparison_path = output_dir / comparison_filename
-
-                    try:
-                        # Extract individual clip from provided video
-                        extract_video_clip(
-                            video_path, clip_path, start_time, duration
-                        )
-                        click.echo(
-                            f"  ✓ Saved clip {i}/{len(merged_clips)}: {clip_path}"
+            # Display worst windows if SSIM was computed
+            if "worst_windows" in result.details:
+                worst_windows = result.details["worst_windows"]
+                if worst_windows:
+                    print_output("\n### Worst Quality Windows (lowest SSIM scores)\n")
+                    for i, window in enumerate(worst_windows, 1):
+                        if 'min_ssim' in window and 'min_ssim_time' in window:
+                            min_ssim_str = f", Min: {window['min_ssim']:.4f} at {window['min_ssim_time']}"
+                        else:
+                            min_ssim_str = ""
+                        print_output(
+                            f"  {i}. Frames {window['start_frame']}-{window['end_frame']} "
+                            f"({window['start_time']} - {window['end_time']}): "
+                            f"Avg: {window['ssim']:.4f}{min_ssim_str}"
                         )
 
-                        # Create side-by-side comparison
-                        # Left: Full-res provided video (what user is verifying)
-                        # Right: Stored digest scaled up to match (shows original quality)
-                        # This gives best visual comparison - full quality vs scaled-up low-res
-                        if stored_digest_path.exists():
-                            click.echo("  Creating side-by-side comparison...")
-                            create_side_by_side_clip(
-                                video_path,  # Left: full resolution provided video
-                                stored_digest_path,  # Right: 240px digest (will be scaled up)
-                                comparison_path,
-                                start_time,
-                                duration,
-                                label1="Provided Video (Full Resolution)",
-                                label2="Original Digest (Scaled from 240px)",
-                                scale_video2_to_video1=True,  # Scale digest to match full-res
-                            )
-                            click.echo(
-                                f"  ✓ Saved comparison {i}/{len(merged_clips)}: {comparison_path}"
-                            )
-                    except Exception as e:
-                        click.echo(
-                            click.style(
-                                f"  ✗ Failed to extract clip {i}: {e}", fg="red"
-                            )
-                        )
+                    # Always extract clips for inspection
+                    print_output("\n### Extracting Audit Clips\n")
 
-                click.echo(f"\nAll clips saved to: {output_dir}")
+                    # Use verification directory for audit clips
+                    clips_dir = verification_dir / "audit-clips"
+                    clips_dir.mkdir(parents=True, exist_ok=True)
 
-        # Display errors if any
-        if result.errors:
-            click.echo(click.style("\nErrors:", fg="red"))
-            for error in result.errors:
-                click.echo(click.style(f"  - {error}", fg="red"))
+                    # Merge overlapping windows into consolidated clips
+                    merged_clips = merge_overlapping_windows(worst_windows)
 
-        # Exit with appropriate code
-        sys.exit(0 if result.is_valid else 1)
+                    # Get the stored digest video from the package for comparison
+                    stored_digest_path = package_path / "digest_video.mp4"
+
+                    # Extract each clip
+                    for i, clip in enumerate(merged_clips, 1):
+                        start_time = clip["start_time"]
+                        duration = clip["end_time"] - clip["start_time"]
+
+                        # Format filename with timestamp
+                        start_str = clip["windows"][0]["start_time"].replace(":", "-")
+                        clip_filename = f"clip_{i:02d}_at_{start_str}.mp4"
+                        comparison_filename = f"comparison_{i:02d}_at_{start_str}.mp4"
+                        clip_path = clips_dir / clip_filename
+                        comparison_path = clips_dir / comparison_filename
+
+                        try:
+                            # Extract individual clip from provided video
+                            extract_video_clip(
+                                video_path, clip_path, start_time, duration
+                            )
+                            print_output(
+                                f"  ✓ Saved clip {i}/{len(merged_clips)}: {clip_path}"
+                            )
+
+                            # Create side-by-side comparison
+                            # Left: Full-res provided video (what user is verifying)
+                            # Right: Stored digest scaled up to match (shows original quality)
+                            # This gives best visual comparison - full quality vs scaled-up low-res
+                            if stored_digest_path.exists():
+                                print_output("  Creating side-by-side comparison...")
+                                create_side_by_side_clip(
+                                    video_path,  # Left: full resolution provided video
+                                    stored_digest_path,  # Right: 240px digest (will be scaled up)
+                                    comparison_path,
+                                    start_time,
+                                    duration,
+                                    label1="Provided Video (Full Resolution)",
+                                    label2="Original Digest (Scaled from 240px)",
+                                    scale_video2_to_video1=True,  # Scale digest to match full-res
+                                )
+                                print_output(
+                                    f"  ✓ Saved comparison {i}/{len(merged_clips)}: {comparison_path}"
+                                )
+                        except Exception as e:
+                            print_output(
+                                f"  ✗ Failed to extract clip {i}: {e}"
+                            )
+
+                    print_output(f"\nAll clips saved to: `{clips_dir}`")
+
+            # Display errors if any
+            if result.errors:
+                print_output("\n### Errors\n")
+                for error in result.errors:
+                    print_output(f"  - {error}")
+
+            # Display verification output directory
+            print_output(f"\n---\n")
+            print_output(f"📁 Verification artifacts saved to: {verification_dir}")
+
+            # Exit with appropriate code
+            sys.exit(0 if result.is_valid else 1)
+
+        finally:
+            # Close report file
+            if _report_file and not _report_file.closed:
+                _report_file.close()
 
     except FileNotFoundError as e:
         click.echo(click.style(f"Error: {e}", fg="red"), err=True)
+        if _report_file and not _report_file.closed:
+            _report_file.close()
         sys.exit(1)
     except RuntimeError as e:
         click.echo(click.style(f"Error: {e}", fg="red"), err=True)
+        if _report_file and not _report_file.closed:
+            _report_file.close()
         sys.exit(1)
     except Exception as e:
         click.echo(click.style(f"Unexpected error: {e}", fg="red"), err=True)
+        if _report_file and not _report_file.closed:
+            _report_file.close()
         sys.exit(1)
 
 

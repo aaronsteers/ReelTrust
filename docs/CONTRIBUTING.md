@@ -35,12 +35,12 @@ uv run poe test
 ### Running the CLI
 
 ```bash
-# Sign a video file
-uv run reeltrust sign path/to/video.mp4 -u "your_username"
+# Create a verification package for a video file
+uv run reeltrust create-package path/to/video.mp4 -u "your_username"
 
 # Get help
 uv run reeltrust --help
-uv run reeltrust sign --help
+uv run reeltrust create-package --help
 ```
 
 ### Testing

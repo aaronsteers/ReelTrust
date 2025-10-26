@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .audio_fingerprint import create_audio_fingerprint, save_audio_fingerprint
+from .fingerprints import create_fingerprints
 from .metadata import create_metadata, save_metadata
 from .signature import create_manifest, create_signature, save_manifest, save_signature
 from .verifier import get_video_properties
@@ -55,12 +56,12 @@ def sign_video(
     print(f"Output directory: {package_dir}")
 
     # Step 1: Hash the original video
-    print("1/5 Hashing original video...")
+    print("1/6 Hashing original video...")
     original_video_hash = hash_file(video_path)
     print(f"    Original video hash: {original_video_hash[:16]}...")
 
     # Step 2: Compress video
-    print(f"2/5 Compressing video to {compression_width}px width...")
+    print(f"2/6 Compressing video to {compression_width}px width...")
     digest_video_path = package_dir / "digest_video.mp4"
     compress_video(video_path, digest_video_path, width=compression_width)
     digest_video_hash = hash_file(digest_video_path)
@@ -68,8 +69,13 @@ def sign_video(
     print(f"    Digest created: {digest_video_path.name} ({digest_video_hash[:16]}...)")
     print(f"    Properties: {digest_properties['frame_count']} frames @ {digest_properties['fps']} fps ({digest_properties['duration']}s)")
 
-    # Step 3: Extract and fingerprint audio
-    print("3/5 Extracting and fingerprinting audio...")
+    # Step 3: Create perceptual fingerprints from original video
+    print("3/6 Creating perceptual fingerprints from original video...")
+    fingerprints_dir = package_dir / "fingerprints"
+    fingerprint_metadata = create_fingerprints(video_path, fingerprints_dir)
+
+    # Step 4: Extract and fingerprint audio
+    print("4/6 Extracting and fingerprinting audio...")
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_audio_path = Path(temp_dir) / "audio.wav"
         extract_audio(video_path, temp_audio_path)
@@ -81,8 +87,8 @@ def sign_video(
     audio_fingerprint_hash = hash_file(audio_fingerprint_path)
     print(f"    Fingerprint created: {fingerprint_data['duration']:.2f}s duration")
 
-    # Step 4: Create metadata
-    print("4/5 Generating metadata...")
+    # Step 5: Create metadata
+    print("5/6 Generating metadata...")
     metadata = create_metadata(
         video_path,
         user_identity=user_identity,
@@ -94,8 +100,8 @@ def sign_video(
     metadata_hash = hash_file(metadata_path)
     print(f"    Metadata saved: {metadata_path.name}")
 
-    # Step 5: Create manifest and signature
-    print("5/5 Creating manifest and signature...")
+    # Step 6: Create manifest and signature
+    print("6/6 Creating manifest and signature...")
     manifest = create_manifest(
         package_dir,
         original_video_hash,
@@ -103,6 +109,7 @@ def sign_video(
         audio_fingerprint_hash,
         metadata_hash,
         digest_properties,
+        fingerprint_metadata,
     )
     manifest_path = package_dir / "manifest.json"
     save_manifest(manifest, manifest_path)
