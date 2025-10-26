@@ -40,7 +40,7 @@ yt-download.help = "Download YouTube video by its ID. Wrapper for 'yt-dlp https:
 yt-download.args = ["video_id"]
 
 # Predefined test clips
-yt-soccer = "yt-dlp --format 'best[ext=mp4]/best' --merge-output-format mp4 https://www.youtube.com/watch?v=7KXGZAEWzn0 --output .data/inputs/soccer-orig-7KXGZAEWzn0.mp4"
+yt-soccer = "yt-dlp --format 'best[ext=mp4]/best' --merge-output-format mp4 https://www.youtube.com/watch?v=FiCSAKiUZpU --output .data/inputs/soccer-orig-7KXGZAEWzn0.mp4"
 yt-obama = "yt-dlp --format 'best[ext=mp4]/best' --merge-output-format mp4 https://www.youtube.com/watch?v=LEo7lzfpdCU --output .data/inputs/obama-orig-LEo7lzfpdCU.mp4"
 yt-whales = "yt-dlp --format 'best[ext=mp4]/best' --merge-output-format mp4 https://www.youtube.com/watch?v=o767PuYbEXg --output .data/inputs/whales-orig-o767PuYbEXg.mp4"
 
