@@ -137,7 +137,7 @@ def verify(
     try:
         # Generate ULID for this verification job
         job_ulid = ULID()
-        ulid_str = str(job_ulid)[-8:]  # Use last 8 characters
+        ulid_str = str(job_ulid)[4:14]  # Use a mid 10 characters
         video_basename = video_path.stem
 
         # Create verification output directory: .data/outputs/verification/{ulid}-{basename}/
@@ -164,12 +164,12 @@ def verify(
             print_output("This may take a moment...\n")
 
             # Perform verification with default compression width and threshold
-            # Note: Threshold of 0.92 allows re-encoding (typically 0.93+) while catching tampering (typically <0.92)
+            # Note: Threshold of 0.96 requires high-quality digest (CRF 23) to pass re-encoding while catching tampering
             result = verify_video_digest(
                 video_path=video_path,
                 package_path=package_path,
                 compression_width=240,
-                ssim_threshold=0.92,
+                ssim_threshold=0.96,
                 clip_offset_seconds=clip_offset,
             )
 
