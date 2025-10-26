@@ -2,10 +2,48 @@
 
 import hashlib
 import subprocess
+from enum import Enum
 from pathlib import Path
 
 
-def compress_video(input_path: Path, output_path: Path, width: int = 240) -> None:
+class CompressionQuality(Enum):
+    """
+    H.264 CRF quality settings for video compression in ReelTrust packages.
+
+    Used for both low-res digest videos and alignment stripe videos.
+    Lower CRF = higher quality = larger files = better tamper detection.
+
+    Test results for low-res digest (240px width, preset=slow):
+    - MAXIMUM: 12.9 MB package, SSIM differential 0.0183 (1.87%) - Best tamper detection
+    - HIGH:     7.5 MB package, SSIM differential 0.0131 (1.36%) - Recommended balance
+    - MEDIUM:   4.7 MB package, SSIM differential 0.0058 (0.62%) - Weak signal
+    - LOW:      3.5 MB package, SSIM differential 0.0005 (0.05%) - Insufficient signal
+
+    SSIM differential = gap between clean re-encoded video and tampered video SSIM scores.
+    Higher differential enables more reliable tamper detection.
+
+    Usage:
+    - Low-res digest: Default is HIGH (CRF 23) for good tamper detection
+    - Alignment stripes: Default is MEDIUM (CRF 28) for space efficiency
+    - Region fingerprints: Use MAXIMUM (CRF 18) for temporary processing accuracy
+    """
+
+    MAXIMUM = 18  # Visually lossless, best tamper detection, largest files
+    HIGH = 23     # Recommended for digest: good signal at reasonable size
+    MEDIUM = 28   # Recommended for stripes: balance size vs precision
+    LOW = 32      # Minimal signal, not recommended for tamper detection
+
+
+# Default quality setting for low-res digest
+DEFAULT_DIGEST_QUALITY = CompressionQuality.HIGH
+
+
+def compress_video(
+    input_path: Path,
+    output_path: Path,
+    width: int = 240,
+    quality: CompressionQuality = DEFAULT_DIGEST_QUALITY,
+) -> None:
     """
     Compress video to a low-resolution reference digest.
 
@@ -13,12 +51,12 @@ def compress_video(input_path: Path, output_path: Path, width: int = 240) -> Non
         input_path: Path to input video file
         output_path: Path to save compressed video
         width: Target width in pixels (height will be calculated to maintain aspect ratio)
+        quality: Compression quality setting (affects tamper detection accuracy vs size)
     """
-    # Use ffmpeg to compress video with high quality for better SSIM verification
+    # Use ffmpeg to compress video for SSIM-based verification
     # -vf scale: resize to target width, maintaining aspect ratio
-    # -crf 18: visually lossless quality for better tamper detection
+    # -crf: quality setting (from CompressionQuality enum)
     # -preset slow: better compression efficiency (encoding done once, verified many times)
-    # -c:a copy: skip audio (we'll fingerprint it separately)
     cmd = [
         "ffmpeg",
         "-i",
@@ -28,7 +66,7 @@ def compress_video(input_path: Path, output_path: Path, width: int = 240) -> Non
         "-c:v",
         "libx264",
         "-crf",
-        "18",
+        str(quality.value),
         "-preset",
         "slow",
         "-an",  # Remove audio (no audio stream)

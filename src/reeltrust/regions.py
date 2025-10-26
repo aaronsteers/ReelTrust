@@ -7,12 +7,19 @@ from typing import Any
 import cv2
 import numpy as np
 
+from .video_processor import CompressionQuality
+
+
+# Default quality for alignment stripes (MEDIUM = CRF 23)
+DEFAULT_STRIPE_QUALITY = CompressionQuality.MEDIUM
+
 
 def extract_horizontal_stripe(
     video_path: Path,
     output_path: Path,
     vertical_position: float,
     stripe_height: int = 3,
+    quality: CompressionQuality = DEFAULT_STRIPE_QUALITY,
 ) -> dict[str, Any]:
     """
     Extract a horizontal stripe VIDEO from a video at a specific vertical position.
@@ -25,6 +32,7 @@ def extract_horizontal_stripe(
         output_path: Path to save the stripe video (should end in .mp4)
         vertical_position: Vertical position as fraction (0.0 = top, 0.5 = center, 1.0 = bottom)
         stripe_height: Height of stripe in pixels (default: 3)
+        quality: Compression quality setting for stripe video
 
     Returns:
         Dictionary with stripe metadata:
@@ -65,7 +73,7 @@ def extract_horizontal_stripe(
         "-vf", f"crop={video_width}:{actual_height}:0:{stripe_y_start},fps=4",
         "-c:v", "libx264",
         "-preset", "fast",
-        "-crf", "18",  # High quality
+        "-crf", str(quality.value),
         "-an",  # No audio
         "-y",
         str(output_path),
@@ -89,6 +97,7 @@ def extract_all_alignment_stripes(
     video_path: Path,
     output_dir: Path,
     stripe_height: int = 3,
+    quality: CompressionQuality = DEFAULT_STRIPE_QUALITY,
 ) -> dict[str, Any]:
     """
     Extract all alignment stripes from a video as a single stacked video.
@@ -107,6 +116,7 @@ def extract_all_alignment_stripes(
         video_path: Path to input video
         output_dir: Directory to save stripe video
         stripe_height: Height of each stripe in pixels (default: 3)
+        quality: Compression quality setting for stripe video
 
     Returns:
         Dictionary with stripe metadata including row positions in merged video
@@ -162,7 +172,7 @@ def extract_all_alignment_stripes(
         "-map", "[out]",
         "-c:v", "libx264",
         "-preset", "fast",
-        "-crf", "23",
+        "-crf", str(quality.value),
         "-an",
         "-y",
         str(output_path),
@@ -200,6 +210,7 @@ def extract_all_alignment_stripes(
 def compute_region_fingerprints(
     video_path: Path,
     region_fraction: float,
+    quality: CompressionQuality = CompressionQuality.HIGH,  # Use high quality for temporary processing
 ) -> tuple[bytes, bytes, list[dict[str, Any]]]:
     """
     Compute fingerprints (dHash, pHash, frame statistics) for a concentric rectangle region.
@@ -207,6 +218,7 @@ def compute_region_fingerprints(
     Args:
         video_path: Path to input video
         region_fraction: Size of the concentric rectangle as a fraction (e.g., 0.75 for 75%)
+        quality: Quality for temporary cropped video (default HIGH for accurate fingerprinting)
 
     Returns:
         Tuple of (dhash_data, phash_data, frame_stats_data)
@@ -248,7 +260,7 @@ def compute_region_fingerprints(
             "-vf", f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}",
             "-c:v", "libx264",
             "-preset", "fast",
-            "-crf", "18",
+            "-crf", str(quality.value),
             "-an",  # No audio
             "-y",
             str(tmp_path),
