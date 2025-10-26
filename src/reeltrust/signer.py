@@ -61,8 +61,11 @@ def sign_video(
     print(f"    Original video hash: {original_video_hash[:16]}...")
 
     # Step 2: Compress video
-    print(f"2/6 Compressing video to {compression_width}px width...")
-    digest_video_path = package_dir / "digest_video.mp4"
+    print(f"2/7 Compressing video to {compression_width}px width...")
+    video_digests_dir = package_dir / "video_digests"
+    video_digests_dir.mkdir(parents=True, exist_ok=True)
+
+    digest_video_path = video_digests_dir / "digest_full_low_res.mp4"
     compress_video(video_path, digest_video_path, width=compression_width)
     digest_video_hash = hash_file(digest_video_path)
     digest_properties = get_video_properties(digest_video_path)
@@ -70,12 +73,26 @@ def sign_video(
     print(f"    Properties: {digest_properties['frame_count']} frames @ {digest_properties['fps']} fps ({digest_properties['duration']}s)")
 
     # Step 3: Create perceptual fingerprints from original video
-    print("3/6 Creating perceptual fingerprints from original video...")
+    print("3/7 Creating perceptual fingerprints from original video...")
     fingerprints_dir = package_dir / "fingerprints"
     fingerprint_metadata = create_fingerprints(video_path, fingerprints_dir)
 
+    # Step 3.5: Extract alignment stripes and region fingerprints
+    print("4/7 Extracting alignment stripes and region fingerprints...")
+    from .regions import extract_all_alignment_stripes, create_region_fingerprints
+
+    # Place stripes under video_digests directory alongside digest_full.mp4
+    stripes_dir = video_digests_dir
+    stripe_metadata = extract_all_alignment_stripes(video_path, stripes_dir, stripe_height=3)
+    print(f"    Extracted {len(stripe_metadata)} alignment stripe videos")
+
+    # Place region fingerprints under the fingerprints directory
+    regions_dir = fingerprints_dir / "regions"
+    region_metadata = create_region_fingerprints(video_path, regions_dir, regions=[0.75, 0.50])
+    print(f"    Created fingerprints for {len(region_metadata)} concentric regions")
+
     # Step 4: Extract and fingerprint audio
-    print("4/6 Extracting and fingerprinting audio...")
+    print("5/7 Extracting and fingerprinting audio...")
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_audio_path = Path(temp_dir) / "audio.wav"
         extract_audio(video_path, temp_audio_path)
@@ -88,7 +105,7 @@ def sign_video(
     print(f"    Fingerprint created: {fingerprint_data['duration']:.2f}s duration")
 
     # Step 5: Create metadata
-    print("5/6 Generating metadata...")
+    print("6/7 Generating metadata...")
     metadata = create_metadata(
         video_path,
         user_identity=user_identity,
@@ -101,7 +118,7 @@ def sign_video(
     print(f"    Metadata saved: {metadata_path.name}")
 
     # Step 6: Create manifest and signature
-    print("6/6 Creating manifest and signature...")
+    print("7/7 Creating manifest and signature...")
     manifest = create_manifest(
         package_dir,
         original_video_hash,
@@ -110,6 +127,8 @@ def sign_video(
         metadata_hash,
         digest_properties,
         fingerprint_metadata,
+        stripe_metadata,
+        region_metadata,
     )
     manifest_path = package_dir / "manifest.json"
     save_manifest(manifest, manifest_path)
@@ -119,8 +138,51 @@ def sign_video(
     save_signature(signature, signature_path)
     print(f"    Signature created: {signature['manifest_hash'][:16]}...")
 
+    # Step 7: Create ZIP archive with selective compression
+    print("\nCreating ZIP archive with selective compression...")
+    zip_path = _create_package_zip(package_dir)
+    print(f"    ZIP created: {zip_path.name} ({zip_path.stat().st_size / 1024 / 1024:.1f} MB)")
+
     print("\n✓ Verification package created successfully!")
     print(f"  Package ID: {manifest['package_id']}")
-    print(f"  Location: {package_dir}")
+    print(f"  Directory: {package_dir}")
+    print(f"  ZIP Archive: {zip_path}")
 
     return package_dir
+
+
+def _create_package_zip(package_dir: Path) -> Path:
+    """
+    Create a ZIP archive of the package with selective compression.
+
+    Videos (already compressed) are stored without compression.
+    Text files and fingerprints are compressed with DEFLATE.
+
+    Args:
+        package_dir: Path to the package directory
+
+    Returns:
+        Path to the created ZIP file
+    """
+    import zipfile
+
+    zip_path = package_dir.parent / f"{package_dir.name}.zip"
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # Walk through all files in the package directory
+        for file_path in package_dir.rglob('*'):
+            if file_path.is_file():
+                # Calculate relative path from package directory
+                rel_path = file_path.relative_to(package_dir)
+
+                # Determine compression strategy based on file type
+                if file_path.suffix in ['.mp4', '.m4v', '.mov']:
+                    # Videos are already compressed - store without compression
+                    compress_type = zipfile.ZIP_STORED
+                else:
+                    # Compress text files, JSON, binaries
+                    compress_type = zipfile.ZIP_DEFLATED
+
+                zf.write(file_path, arcname=rel_path, compress_type=compress_type)
+
+    return zip_path

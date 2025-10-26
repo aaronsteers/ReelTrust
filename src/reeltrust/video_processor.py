@@ -14,10 +14,10 @@ def compress_video(input_path: Path, output_path: Path, width: int = 240) -> Non
         output_path: Path to save compressed video
         width: Target width in pixels (height will be calculated to maintain aspect ratio)
     """
-    # Use ffmpeg to compress video with very high compression
+    # Use ffmpeg to compress video with high quality for better SSIM verification
     # -vf scale: resize to target width, maintaining aspect ratio
-    # -crf 32: high compression (0-51, higher = more compression)
-    # -preset fast: encoding speed preset
+    # -crf 18: visually lossless quality for better tamper detection
+    # -preset slow: better compression efficiency (encoding done once, verified many times)
     # -c:a copy: skip audio (we'll fingerprint it separately)
     cmd = [
         "ffmpeg",
@@ -28,9 +28,9 @@ def compress_video(input_path: Path, output_path: Path, width: int = 240) -> Non
         "-c:v",
         "libx264",
         "-crf",
-        "32",
+        "18",
         "-preset",
-        "fast",
+        "slow",
         "-an",  # Remove audio (no audio stream)
         "-y",  # Overwrite output file
         str(output_path),

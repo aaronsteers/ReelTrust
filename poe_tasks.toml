@@ -34,6 +34,14 @@ build = "uv build"
 clean = "rm -rf .pytest_cache .coverage htmlcov dist .ruff_cache"
 version = { "shell" = "echo 'reeltrust version:' && python -c 'import reeltrust; print(reeltrust.__version__)'" }
 
+# Download full video+audio by URL or video ID
+yt-download = { cmd = "yt-dlp https://www.youtube.com/watch?v=${video_id}", help = "Download full video+audio by YouTube video ID", env = { video_id = "REQUIRED" } }
+
+# Predefined test clips
+yt-soccer = "poe yt-download --video_id=7KXGZAEWzn0"
+yt-obama = "poe yt-download --video_id=EqGB9GPzA2k"
+yt-drums = "poe yt-download --video_id=KCyIfcevExE"
+
 [tool.poe.tasks.typecheck]
 help = "Run type checking with mypy"
 cmd = "echo 'Type checking not yet configured - consider adding mypy'"

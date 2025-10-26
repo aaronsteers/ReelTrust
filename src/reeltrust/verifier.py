@@ -932,7 +932,7 @@ def verify_video_digest(
     # Step 1: Validate package structure
     manifest_path = package_path / "manifest.json"
     signature_path = package_path / "signature.json"
-    digest_path = package_path / "digest_video.mp4"
+    digest_path = package_path / "video_digests" / "digest_full_low_res.mp4"
 
     if not package_path.exists() or not package_path.is_dir():
         errors.append(f"Package directory does not exist: {package_path}")
@@ -944,7 +944,7 @@ def verify_video_digest(
     if not signature_path.exists():
         missing_files.append("signature.json")
     if not digest_path.exists():
-        missing_files.append("digest_video.mp4")
+        missing_files.append("video_digests/digest_full_low_res.mp4")
 
     if missing_files:
         errors.append(f"Missing required files: {', '.join(missing_files)}")
@@ -1121,7 +1121,7 @@ def verify_video_digest(
                 # Step 4: Compare digest hashes
                 recreated_hash = hash_file(recreated_digest_path)
                 stored_digest_hash = (
-                    manifest.get("files", {}).get("digest_video.mp4", {}).get("sha256", "")
+                    manifest.get("files", {}).get("video_digests/digest_full_low_res.mp4", {}).get("sha256", "")
                 )
 
                 details["recreated_digest_hash"] = recreated_hash
@@ -1165,7 +1165,7 @@ def verify_video_digest(
 
                     # Try to get stored frame count from manifest (optimization)
                     # Fall back to computing it if not present
-                    stored_frames = manifest.get("files", {}).get("digest_video.mp4", {}).get("frame_count")
+                    stored_frames = manifest.get("files", {}).get("video_digests/digest_full_low_res.mp4", {}).get("frame_count")
                     if stored_frames is None:
                         stored_frames = get_video_frame_count(digest_path)
 

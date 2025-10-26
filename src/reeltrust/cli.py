@@ -83,7 +83,7 @@ def create_package(
                 sys.exit(1)
 
         # Use default output directory
-        output_dir = Path(".data/outputs/reel-trust-packages")
+        output_dir = Path(".data/outputs/packages")
 
         # Create the signed package with default compression width
         package_dir = sign_video(
@@ -328,7 +328,7 @@ def verify(
                     merged_clips = merge_overlapping_windows(worst_windows)
 
                     # Get the stored digest video from the package for comparison
-                    stored_digest_path = package_path / "digest_video.mp4"
+                    stored_digest_path = package_path / "video_digests" / "digest_full_low_res.mp4"
 
                     # Determine effective clip offset (manual or auto-detected)
                     effective_offset = clip_offset

@@ -29,6 +29,8 @@ def create_manifest(
     metadata_hash: str,
     digest_properties: dict[str, Any] | None = None,
     fingerprint_metadata: dict[str, Any] | None = None,
+    stripe_metadata: dict[str, Any] | None = None,
+    region_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Create a manifest containing all file hashes and references.
@@ -63,7 +65,7 @@ def create_manifest(
             :16
         ],  # Use first 16 chars of original video hash as ID
         "files": {
-            "digest_video.mp4": digest_entry,
+            "video_digests/digest_full_low_res.mp4": digest_entry,
             "audio_fingerprint.json": {
                 "sha256": audio_fingerprint_hash,
                 "description": "Audio fingerprint data",
@@ -82,6 +84,14 @@ def create_manifest(
     # Add fingerprint metadata if provided
     if fingerprint_metadata:
         manifest["fingerprints"] = fingerprint_metadata
+
+    # Add stripe metadata if provided
+    if stripe_metadata:
+        manifest["alignment_stripes"] = stripe_metadata
+
+    # Add region metadata if provided
+    if region_metadata:
+        manifest["concentric_regions"] = region_metadata
 
     return manifest
 
