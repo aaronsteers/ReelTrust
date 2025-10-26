@@ -12,6 +12,7 @@ from reeltrust.fingerprints import (
     compute_dhash,
     compute_frame_statistics,
     compute_phash,
+    hamming_distance,
 )
 from reeltrust.signature import calculate_manifest_hash, load_manifest, load_signature
 from reeltrust.video_processor import compress_video, hash_file
@@ -320,6 +321,7 @@ def create_side_by_side_clip(
     label1: str = "Provided",
     label2: str = "Expected",
     scale_video2_to_video1: bool = False,
+    video2_start_time: float | None = None,
 ) -> None:
     """
     Create a side-by-side comparison clip from two videos.
@@ -332,17 +334,24 @@ def create_side_by_side_clip(
         video1_path: Path to the first video (left side)
         video2_path: Path to the second video (right side)
         output_path: Path for the output comparison clip
-        start_time: Start time in seconds (will be clamped to 0)
+        start_time: Start time in seconds for video1 (will be clamped to 0)
         duration: Clip duration in seconds (default: 5.0)
         label1: Label for first video (default: "Provided")
         label2: Label for second video (default: "Expected")
         scale_video2_to_video1: If True, scale video2 to match video1's dimensions
+        video2_start_time: Start time in seconds for video2 (default: same as video1)
 
     Raises:
         subprocess.CalledProcessError: If FFmpeg command fails
     """
     # Ensure start time is not negative
     start_time = max(0.0, start_time)
+
+    # Use same start time for video2 if not specified
+    if video2_start_time is None:
+        video2_start_time = start_time
+    else:
+        video2_start_time = max(0.0, video2_start_time)
 
     # FFmpeg filter for side-by-side with labels
     # [0:v] = first input video stream (left - full resolution)
@@ -378,7 +387,7 @@ def create_side_by_side_clip(
         "-i",
         str(video1_path),
         "-ss",
-        str(start_time),
+        str(video2_start_time),
         "-i",
         str(video2_path),
         "-t",
@@ -540,6 +549,146 @@ def get_video_properties(video_path: Path) -> dict[str, Any]:
         "fps": fps,
         "duration": round(duration, 2),
     }
+
+
+def auto_detect_clip_offset(
+    clip_fingerprints: dict[str, Any],
+    stored_fingerprints: dict[str, Any],
+    fps: float = 30.0,
+    stride: int = 30,  # Check every second
+) -> tuple[float, dict[str, float]]:
+    """Auto-detect the temporal offset of a clip within the full video using fingerprint matching.
+
+    Uses a sliding window approach to find the best match position by comparing clip fingerprints
+    against different positions in the stored full-video fingerprints.
+
+    Args:
+        clip_fingerprints: Fingerprints computed from the clip
+        stored_fingerprints: Fingerprints from the full original video
+        fps: Frames per second (default: 30.0)
+        stride: Frame stride for sliding window (default: 30 = check every 1 second)
+
+    Returns:
+        Tuple of (best_offset_seconds, scores_dict) where scores_dict contains:
+        - 'dhash_similarity': 0-1 score for dHash match
+        - 'phash_similarity': 0-1 score for pHash match
+        - 'frame_stats_correlation': 0-1 score for frame statistics
+        - 'combined_score': Weighted combination
+    """
+    import struct
+    import numpy as np
+
+    clip_frame_count = clip_fingerprints['frame_count']
+    stored_frame_count = stored_fingerprints['frame_count']
+
+    if clip_frame_count > stored_frame_count:
+        raise ValueError(f"Clip has more frames ({clip_frame_count}) than stored video ({stored_frame_count})")
+
+    print(f"\n  Auto-detecting clip offset...")
+    print(f"  Clip: {clip_frame_count} frames, Stored: {stored_frame_count} frames")
+    print(f"  Testing {((stored_frame_count - clip_frame_count) // stride) + 1} positions (stride={stride})...")
+
+    best_offset_frames = 0
+    best_combined_score = -1.0
+    best_scores = {}
+
+    # Slide the clip fingerprints across the stored fingerprints
+    for offset_frames in range(0, stored_frame_count - clip_frame_count + 1, stride):
+        # Extract subset of stored fingerprints at this offset
+        end_frame = offset_frames + clip_frame_count
+
+        # Compare dHash
+        dhash_similarity = 0.0
+        if 'dhash' in clip_fingerprints and 'dhash' in stored_fingerprints:
+            clip_dhash = clip_fingerprints['dhash']
+            stored_dhash_full = stored_fingerprints['dhash']
+
+            bytes_per_hash = 8
+            start_byte = offset_frames * bytes_per_hash
+            end_byte = end_frame * bytes_per_hash
+            stored_dhash_subset = stored_dhash_full[start_byte:end_byte]
+
+            # Compute average Hamming distance
+            total_distance = 0
+            for i in range(len(clip_dhash) // bytes_per_hash):
+                offset_i = i * bytes_per_hash
+                clip_hash = struct.unpack('<Q', clip_dhash[offset_i:offset_i + bytes_per_hash])[0]
+                stored_hash = struct.unpack('<Q', stored_dhash_subset[offset_i:offset_i + bytes_per_hash])[0]
+                total_distance += hamming_distance(clip_hash, stored_hash)
+
+            avg_distance = total_distance / (len(clip_dhash) // bytes_per_hash)
+            # Convert distance to similarity (0-1, where 1 is perfect)
+            dhash_similarity = 1.0 - (avg_distance / 64.0)  # 64 is max Hamming distance for 64-bit hash
+
+        # Compare pHash
+        phash_similarity = 0.0
+        if 'phash' in clip_fingerprints and 'phash' in stored_fingerprints:
+            clip_phash = clip_fingerprints['phash']
+            stored_phash_full = stored_fingerprints['phash']
+
+            bytes_per_hash = 8
+            start_byte = offset_frames * bytes_per_hash
+            end_byte = end_frame * bytes_per_hash
+            stored_phash_subset = stored_phash_full[start_byte:end_byte]
+
+            total_distance = 0
+            for i in range(len(clip_phash) // bytes_per_hash):
+                offset_i = i * bytes_per_hash
+                clip_hash = struct.unpack('<Q', clip_phash[offset_i:offset_i + bytes_per_hash])[0]
+                stored_hash = struct.unpack('<Q', stored_phash_subset[offset_i:offset_i + bytes_per_hash])[0]
+                total_distance += hamming_distance(clip_hash, stored_hash)
+
+            avg_distance = total_distance / (len(clip_phash) // bytes_per_hash)
+            phash_similarity = 1.0 - (avg_distance / 64.0)
+
+        # Compare frame statistics (correlation)
+        frame_stats_correlation = 0.0
+        if 'frame_stats' in clip_fingerprints and 'frame_stats' in stored_fingerprints:
+            clip_stats = clip_fingerprints['frame_stats']
+            stored_stats_full = stored_fingerprints['frame_stats']
+            stored_stats_subset = stored_stats_full[offset_frames:end_frame]
+
+            # Compute correlation for each channel and average
+            channels = ['y_mean', 'y_std', 'u_mean', 'u_std', 'v_mean', 'v_std']
+            correlations = []
+            for channel in channels:
+                clip_values = np.array([frame[channel] for frame in clip_stats])
+                stored_values = np.array([frame[channel] for frame in stored_stats_subset])
+                corr = np.corrcoef(clip_values, stored_values)[0, 1]
+                if not np.isnan(corr):
+                    correlations.append(corr)
+
+            if correlations:
+                frame_stats_correlation = float(np.mean(correlations))
+                # Normalize to 0-1 (correlation ranges from -1 to 1)
+                frame_stats_correlation = (frame_stats_correlation + 1.0) / 2.0
+
+        # Combined score (weighted as suggested in issue)
+        # 0.4 × SSIM + 0.3 × dHash_similarity + 0.3 × frame_stats_correlation
+        # (We don't have SSIM here, so we'll use: 0.4 × pHash + 0.3 × dHash + 0.3 × frame_stats)
+        combined_score = (
+            0.4 * phash_similarity +
+            0.3 * dhash_similarity +
+            0.3 * frame_stats_correlation
+        )
+
+        if combined_score > best_combined_score:
+            best_combined_score = combined_score
+            best_offset_frames = offset_frames
+            best_scores = {
+                'dhash_similarity': round(dhash_similarity, 4),
+                'phash_similarity': round(phash_similarity, 4),
+                'frame_stats_correlation': round(frame_stats_correlation, 4),
+                'combined_score': round(combined_score, 4),
+            }
+
+    best_offset_seconds = best_offset_frames / fps
+
+    print(f"  ✓ Best match at offset: {best_offset_seconds:.1f}s (frame {best_offset_frames})")
+    print(f"    Combined score: {best_scores['combined_score']:.4f}")
+    print(f"    dHash: {best_scores['dhash_similarity']:.4f}, pHash: {best_scores['phash_similarity']:.4f}, Frame stats: {best_scores['frame_stats_correlation']:.4f}")
+
+    return best_offset_seconds, best_scores
 
 
 def compute_and_compare_fingerprints(
@@ -825,6 +974,87 @@ def verify_video_digest(
         checks["manifest_integrity"] = False
         errors.append(f"Failed to verify manifest: {e!s}")
         return VerificationResult(False, checks, details, errors)
+
+    # Step 2.5: Auto-detect clip offset if not provided
+    if clip_offset_seconds is None:
+        # Check if this might be a clip by comparing video lengths
+        try:
+            provided_frame_count = get_video_frame_count(video_path)
+
+            # Check if stored fingerprints exist to compare against
+            fingerprints_dir = package_path / "fingerprints"
+            dhash_path = fingerprints_dir / "dhash.bin"
+
+            if dhash_path.exists():
+                stored_dhash = dhash_path.read_bytes()
+                bytes_per_hash = 8
+                stored_frame_count = len(stored_dhash) // bytes_per_hash
+
+                # If provided video is significantly shorter, assume it's a clip
+                if provided_frame_count < stored_frame_count * 0.95:
+                    print(f"\n🔍 Auto-detecting clip offset...")
+                    print(f"   Provided video: {provided_frame_count} frames")
+                    print(f"   Stored package: {stored_frame_count} frames")
+                    print(f"   Attempting to locate clip position...\n")
+
+                    # Compute fingerprints from provided video first
+                    from .fingerprints import compute_dhash, compute_phash, compute_frame_statistics
+                    import time
+
+                    dhash_data, _, _ = compute_dhash(video_path)
+                    phash_data, _, _ = compute_phash(video_path)
+                    stats_data, _, _ = compute_frame_statistics(video_path)
+
+                    # Load stored fingerprints
+                    phash_path = fingerprints_dir / "phash.bin"
+                    stats_path = fingerprints_dir / "frame_stats.json"
+
+                    stored_phash = phash_path.read_bytes() if phash_path.exists() else None
+
+                    import json
+                    with open(stats_path, 'r') as f:
+                        stored_stats = json.load(f)
+
+                    # Create fingerprint dictionaries
+                    clip_fingerprints = {
+                        'dhash': dhash_data,
+                        'phash': phash_data,
+                        'frame_stats': stats_data,
+                        'frame_count': provided_frame_count
+                    }
+
+                    stored_fingerprints = {
+                        'dhash': stored_dhash,
+                        'phash': stored_phash,
+                        'frame_stats': stored_stats,
+                        'frame_count': stored_frame_count
+                    }
+
+                    # Auto-detect offset
+                    best_offset_seconds, detection_scores = auto_detect_clip_offset(
+                        clip_fingerprints,
+                        stored_fingerprints,
+                        fps=30.0,
+                        stride=30  # Check every 1 second
+                    )
+
+                    clip_offset_seconds = best_offset_seconds
+
+                    print(f"\n✓ Auto-detected clip offset: {best_offset_seconds:.2f}s ({int(best_offset_seconds // 60)}:{int(best_offset_seconds % 60):02d})")
+                    print(f"   Match scores:")
+                    print(f"     - Combined: {detection_scores['combined_score']:.4f}")
+                    print(f"     - pHash similarity: {detection_scores['phash_similarity']:.4f}")
+                    print(f"     - dHash similarity: {detection_scores['dhash_similarity']:.4f}")
+                    print(f"     - Frame stats correlation: {detection_scores['frame_stats_correlation']:.4f}\n")
+
+                    details["auto_detected_offset"] = {
+                        "offset_seconds": best_offset_seconds,
+                        "offset_timestamp": f"{int(best_offset_seconds // 60)}:{int(best_offset_seconds % 60):02d}",
+                        "scores": detection_scores
+                    }
+        except Exception as e:
+            print(f"⚠️  Auto-detection failed: {e}")
+            print("   Continuing with manual verification...\n")
 
     # Step 3: Recreate the digest video from the provided video
     # For clips, extract corresponding clip from stored digest and compare

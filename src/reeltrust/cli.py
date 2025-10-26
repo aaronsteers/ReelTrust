@@ -192,12 +192,22 @@ def verify(
                 formatted_name = check_name.replace("_", " ").title()
                 print_output(f"  {status} {formatted_name}")
 
+            # Display auto-detection info if present
+            if "auto_detected_offset" in result.details:
+                auto_info = result.details["auto_detected_offset"]
+                print_output("\n### Auto-Detected Clip Position\n")
+                print_output(f"  Offset: {auto_info['offset_seconds']:.2f}s ({auto_info['offset_timestamp']})")
+                print_output(f"  Match Quality: {auto_info['scores']['combined_score']:.4f}")
+                print_output(f"    - pHash: {auto_info['scores']['phash_similarity']:.4f}")
+                print_output(f"    - dHash: {auto_info['scores']['dhash_similarity']:.4f}")
+                print_output(f"    - Frame Stats: {auto_info['scores']['frame_stats_correlation']:.4f}")
+
             # Display details if available
             print_output("\n### Details\n")
             if result.details:
                 for key, value in result.details.items():
-                    # Skip worst_windows and fingerprints - we'll display them separately
-                    if key in ("worst_windows", "fingerprints"):
+                    # Skip worst_windows, fingerprints, and auto_detected_offset - we'll display them separately
+                    if key in ("worst_windows", "fingerprints", "auto_detected_offset"):
                         continue
                     formatted_key = key.replace("_", " ").title()
                     if isinstance(value, float):
@@ -320,6 +330,11 @@ def verify(
                     # Get the stored digest video from the package for comparison
                     stored_digest_path = package_path / "digest_video.mp4"
 
+                    # Determine effective clip offset (manual or auto-detected)
+                    effective_offset = clip_offset
+                    if effective_offset is None and "auto_detected_offset" in result.details:
+                        effective_offset = result.details["auto_detected_offset"]["offset_seconds"]
+
                     # Extract each clip
                     for i, clip in enumerate(merged_clips, 1):
                         start_time = clip["start_time"]
@@ -347,15 +362,23 @@ def verify(
                             # This gives best visual comparison - full quality vs scaled-up low-res
                             if stored_digest_path.exists():
                                 print_output("  Creating side-by-side comparison...")
+
+                                # For clips, we need to offset the digest extraction time
+                                # start_time is relative to the clip, but we need absolute time in the digest
+                                digest_start_time = start_time
+                                if effective_offset is not None:
+                                    digest_start_time = start_time + effective_offset
+
                                 create_side_by_side_clip(
                                     video_path,  # Left: full resolution provided video
                                     stored_digest_path,  # Right: 240px digest (will be scaled up)
                                     comparison_path,
-                                    start_time,
+                                    start_time,  # Extract from provided video at clip-relative time
                                     duration,
                                     label1="Provided Video (Full Resolution)",
                                     label2="Original Digest (Scaled from 240px)",
                                     scale_video2_to_video1=True,  # Scale digest to match full-res
+                                    video2_start_time=digest_start_time,  # Extract from digest at offset time
                                 )
                                 print_output(
                                     f"  ✓ Saved comparison {i}/{len(merged_clips)}: {comparison_path}"
