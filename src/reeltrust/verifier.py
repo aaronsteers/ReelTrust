@@ -545,13 +545,19 @@ def get_video_properties(video_path: Path) -> dict[str, Any]:
 def compute_and_compare_fingerprints(
     video_path: Path,
     package_path: Path,
+    clip_offset_seconds: float | None = None,
+    fps: float = 30.0,
 ) -> dict[str, Any]:
     """
     Compute fingerprints from the provided video and compare with stored fingerprints.
 
+    For clips, extracts the corresponding subset of stored fingerprints based on the offset.
+
     Args:
         video_path: Path to the video file to verify
         package_path: Path to the verification package directory
+        clip_offset_seconds: Time offset in seconds if verifying a clip (default: None)
+        fps: Frames per second for calculating frame offsets (default: 30.0)
 
     Returns:
         Dictionary with fingerprint comparison data:
@@ -569,14 +575,23 @@ def compute_and_compare_fingerprints(
                 'frame_stats': list[dict],
                 'frame_count': int
             },
-            'has_stored_fingerprints': bool
+            'has_stored_fingerprints': bool,
+            'clip_offset_frames': int | None  # Frame offset if clip
         }
     """
     result = {
         'computed': {},
         'stored': {},
-        'has_stored_fingerprints': False
+        'has_stored_fingerprints': False,
+        'clip_offset_frames': None
     }
+
+    # Calculate frame offset if this is a clip
+    clip_offset_frames = None
+    if clip_offset_seconds is not None:
+        clip_offset_frames = int(clip_offset_seconds * fps)
+        result['clip_offset_frames'] = clip_offset_frames
+        print(f"  Clip mode: Offset = {clip_offset_seconds}s (frame {clip_offset_frames})")
 
     # Compute fingerprints from the provided video
     print("  Computing perceptual fingerprints from provided video...")
@@ -615,21 +630,52 @@ def compute_and_compare_fingerprints(
         stats_path = fingerprints_dir / "frame_stats.json"
 
         if dhash_path.exists():
-            stored_dhash = dhash_path.read_bytes()
+            stored_dhash_full = dhash_path.read_bytes()
+
+            # Extract subset if this is a clip
+            if clip_offset_frames is not None:
+                bytes_per_hash = 8  # 64-bit hash
+                start_byte = clip_offset_frames * bytes_per_hash
+                end_byte = start_byte + (dhash_frames * bytes_per_hash)
+                stored_dhash = stored_dhash_full[start_byte:end_byte]
+                print(f"    - dHash: {len(stored_dhash):,} bytes (extracted frames {clip_offset_frames}-{clip_offset_frames + dhash_frames})")
+            else:
+                stored_dhash = stored_dhash_full
+                print(f"    - dHash: {len(stored_dhash):,} bytes")
+
             result['stored']['dhash'] = stored_dhash
-            print(f"    - dHash: {len(stored_dhash):,} bytes")
 
         if phash_path.exists():
-            stored_phash = phash_path.read_bytes()
+            stored_phash_full = phash_path.read_bytes()
+
+            # Extract subset if this is a clip
+            if clip_offset_frames is not None:
+                bytes_per_hash = 8  # 64-bit hash
+                start_byte = clip_offset_frames * bytes_per_hash
+                end_byte = start_byte + (phash_frames * bytes_per_hash)
+                stored_phash = stored_phash_full[start_byte:end_byte]
+                print(f"    - pHash: {len(stored_phash):,} bytes (extracted frames {clip_offset_frames}-{clip_offset_frames + phash_frames})")
+            else:
+                stored_phash = stored_phash_full
+                print(f"    - pHash: {len(stored_phash):,} bytes")
+
             result['stored']['phash'] = stored_phash
-            print(f"    - pHash: {len(stored_phash):,} bytes")
 
         if stats_path.exists():
             with open(stats_path) as f:
-                stored_stats = json.load(f)
+                stored_stats_full = json.load(f)
+
+            # Extract subset if this is a clip
+            if clip_offset_frames is not None:
+                end_frame = clip_offset_frames + stats_frames
+                stored_stats = stored_stats_full[clip_offset_frames:end_frame]
+                print(f"    - Frame statistics: {len(stored_stats)} frames (extracted frames {clip_offset_frames}-{end_frame})")
+            else:
+                stored_stats = stored_stats_full
+                print(f"    - Frame statistics: {len(stored_stats)} frames")
+
             result['stored']['frame_stats'] = stored_stats
             result['stored']['frame_count'] = len(stored_stats)
-            print(f"    - Frame statistics: {len(stored_stats)} frames")
 
         # Perform comparisons if we have both computed and stored fingerprints
         print("\n  Comparing fingerprints...")
@@ -697,6 +743,7 @@ def verify_video_digest(
     package_path: Path,
     compression_width: int = 240,
     ssim_threshold: float = 0.99,
+    clip_offset_seconds: float | None = None,
 ) -> VerificationResult:
     """
     Verify that a video digest package is authentic and matches the original video.
@@ -717,6 +764,7 @@ def verify_video_digest(
         package_path: Path to the verification package directory
         compression_width: Width for compression (default: 240px)
         ssim_threshold: Minimum SSIM score for validation (default: 0.99)
+        clip_offset_seconds: Time offset in seconds if verifying a clip (default: None)
 
     Returns:
         VerificationResult object containing validation status and details
@@ -779,88 +827,148 @@ def verify_video_digest(
         return VerificationResult(False, checks, details, errors)
 
     # Step 3: Recreate the digest video from the provided video
-    try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            recreated_digest_path = Path(tmp_dir) / "recreated_digest.mp4"
-            compress_video(video_path, recreated_digest_path, width=compression_width)
+    # For clips, extract corresponding clip from stored digest and compare
+    if clip_offset_seconds is not None:
+        print(f"\nClip mode: Extracting digest clip at offset {clip_offset_seconds}s")
+        checks["digest_hash_match"] = None  # N/A for clips
+        checks["frame_count_match"] = None  # N/A for clips
 
-            # Step 4: Compare digest hashes
-            recreated_hash = hash_file(recreated_digest_path)
-            stored_digest_hash = (
-                manifest.get("files", {}).get("digest_video.mp4", {}).get("sha256", "")
-            )
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                # Compress the provided clip to create digest
+                recreated_digest_clip_path = Path(tmp_dir) / "recreated_digest_clip.mp4"
+                compress_video(video_path, recreated_digest_clip_path, width=compression_width)
 
-            details["recreated_digest_hash"] = recreated_hash
-            details["stored_digest_hash"] = stored_digest_hash
+                # Extract corresponding clip from stored digest
+                stored_digest_clip_path = Path(tmp_dir) / "stored_digest_clip.mp4"
 
-            if recreated_hash == stored_digest_hash:
-                checks["digest_hash_match"] = True
-                checks["ssim_score"] = True  # Hash match means perfect similarity
-                details["ssim_score"] = 1.0
-            else:
-                checks["digest_hash_match"] = False
+                # Calculate duration from the clip
+                clip_frame_count = get_video_frame_count(video_path)
+                clip_duration_seconds = clip_frame_count / 30.0  # Assume 30fps
 
-                # Step 5: If hashes differ, compute SSIM
-                try:
-                    ssim_score, min_frame_ssim, worst_windows = compute_ssim(
-                        recreated_digest_path, digest_path
+                # Extract clip from stored digest using ffmpeg (re-encode for exact frame alignment)
+                import subprocess
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-ss', str(clip_offset_seconds),
+                    '-i', str(digest_path),
+                    '-t', str(clip_duration_seconds),
+                    # Re-encode to ensure exact frame alignment
+                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '18',
+                    '-c:a', 'copy',
+                    str(stored_digest_clip_path)
+                ]
+                subprocess.run(cmd, check=True, capture_output=True)
+
+                # Compute SSIM between the two digest clips
+                ssim_score, min_frame_ssim, worst_windows = compute_ssim(
+                    recreated_digest_clip_path, stored_digest_clip_path
+                )
+                details["ssim_score"] = ssim_score
+                details["min_frame_ssim"] = min_frame_ssim
+                details["worst_windows"] = worst_windows
+
+                if ssim_score >= ssim_threshold:
+                    checks["ssim_score"] = True
+                else:
+                    checks["ssim_score"] = False
+                    errors.append(
+                        f"Clip SSIM score {ssim_score:.4f} below threshold {ssim_threshold}. "
+                        f"Clip may have been tampered with."
                     )
-                    details["ssim_score"] = ssim_score
-                    details["min_frame_ssim"] = min_frame_ssim
-                    details["worst_windows"] = worst_windows
 
-                    if ssim_score >= ssim_threshold:
-                        checks["ssim_score"] = True
-                        details["ssim_note"] = (
-                            f"Hashes differ but SSIM score {ssim_score:.4f} "
-                            f"meets threshold {ssim_threshold}"
+        except Exception as e:
+            checks["ssim_score"] = False
+            errors.append(f"Failed to compute clip SSIM: {e!s}")
+            print(f"  ⚠️  SSIM comparison failed: {e}")
+    else:
+        # Full video verification - perform digest recreation
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                recreated_digest_path = Path(tmp_dir) / "recreated_digest.mp4"
+                compress_video(video_path, recreated_digest_path, width=compression_width)
+
+                # Step 4: Compare digest hashes
+                recreated_hash = hash_file(recreated_digest_path)
+                stored_digest_hash = (
+                    manifest.get("files", {}).get("digest_video.mp4", {}).get("sha256", "")
+                )
+
+                details["recreated_digest_hash"] = recreated_hash
+                details["stored_digest_hash"] = stored_digest_hash
+
+                if recreated_hash == stored_digest_hash:
+                    checks["digest_hash_match"] = True
+                    checks["ssim_score"] = True  # Hash match means perfect similarity
+                    details["ssim_score"] = 1.0
+                else:
+                    checks["digest_hash_match"] = False
+
+                    # Step 5: If hashes differ, compute SSIM
+                    try:
+                        ssim_score, min_frame_ssim, worst_windows = compute_ssim(
+                            recreated_digest_path, digest_path
                         )
-                    else:
+                        details["ssim_score"] = ssim_score
+                        details["min_frame_ssim"] = min_frame_ssim
+                        details["worst_windows"] = worst_windows
+
+                        if ssim_score >= ssim_threshold:
+                            checks["ssim_score"] = True
+                            details["ssim_note"] = (
+                                f"Hashes differ but SSIM score {ssim_score:.4f} "
+                                f"meets threshold {ssim_threshold}"
+                            )
+                        else:
+                            checks["ssim_score"] = False
+                            errors.append(
+                                f"SSIM score {ssim_score:.4f} below threshold {ssim_threshold}. "
+                                f"Video digest may have been tampered with."
+                            )
+                    except Exception as e:
                         checks["ssim_score"] = False
+                        errors.append(f"Failed to compute SSIM: {e!s}")
+
+                # Step 6: Validate frame counts
+                try:
+                    recreated_frames = get_video_frame_count(recreated_digest_path)
+
+                    # Try to get stored frame count from manifest (optimization)
+                    # Fall back to computing it if not present
+                    stored_frames = manifest.get("files", {}).get("digest_video.mp4", {}).get("frame_count")
+                    if stored_frames is None:
+                        stored_frames = get_video_frame_count(digest_path)
+
+                    details["recreated_frame_count"] = recreated_frames
+                    details["stored_frame_count"] = stored_frames
+
+                    if recreated_frames == stored_frames:
+                        checks["frame_count_match"] = True
+                    else:
+                        checks["frame_count_match"] = False
                         errors.append(
-                            f"SSIM score {ssim_score:.4f} below threshold {ssim_threshold}. "
-                            f"Video digest may have been tampered with."
+                            f"Frame count mismatch. Expected: {stored_frames}, "
+                            f"Got: {recreated_frames}"
                         )
                 except Exception as e:
-                    checks["ssim_score"] = False
-                    errors.append(f"Failed to compute SSIM: {e!s}")
-
-            # Step 6: Validate frame counts
-            try:
-                recreated_frames = get_video_frame_count(recreated_digest_path)
-
-                # Try to get stored frame count from manifest (optimization)
-                # Fall back to computing it if not present
-                stored_frames = manifest.get("files", {}).get("digest_video.mp4", {}).get("frame_count")
-                if stored_frames is None:
-                    stored_frames = get_video_frame_count(digest_path)
-
-                details["recreated_frame_count"] = recreated_frames
-                details["stored_frame_count"] = stored_frames
-
-                if recreated_frames == stored_frames:
-                    checks["frame_count_match"] = True
-                else:
                     checks["frame_count_match"] = False
-                    errors.append(
-                        f"Frame count mismatch. Expected: {stored_frames}, "
-                        f"Got: {recreated_frames}"
-                    )
-            except Exception as e:
-                checks["frame_count_match"] = False
-                errors.append(f"Failed to verify frame counts: {e!s}")
+                    errors.append(f"Failed to verify frame counts: {e!s}")
 
-    except Exception as e:
-        checks["digest_recreation"] = False
-        errors.append(f"Failed to recreate digest video: {e!s}")
-        return VerificationResult(False, checks, details, errors)
+        except Exception as e:
+            checks["digest_recreation"] = False
+            errors.append(f"Failed to recreate digest video: {e!s}")
+            return VerificationResult(False, checks, details, errors)
 
     # Step 7: Compute and compare perceptual fingerprints
     print("\n" + "=" * 60)
     print("Perceptual Fingerprint Analysis")
     print("=" * 60)
     try:
-        fingerprint_data = compute_and_compare_fingerprints(video_path, package_path)
+        fingerprint_data = compute_and_compare_fingerprints(
+            video_path,
+            package_path,
+            clip_offset_seconds=clip_offset_seconds
+        )
         details["fingerprints"] = fingerprint_data
 
         if not fingerprint_data['has_stored_fingerprints']:
@@ -906,19 +1014,39 @@ def verify_video_digest(
         print("=" * 60 + "\n")
 
     # Overall validation: determine if video is valid
-    # We accept either:
+    # For full videos:
     # - Exact digest hash match, OR
     # - SSIM score meets threshold
-    # All other checks (package structure, manifest integrity, frame count) must pass
+    # - All other checks (package structure, manifest integrity, frame count) must pass
+    #
+    # For clips (offset provided):
+    # - Package structure and manifest integrity must pass
+    # - At least one fingerprint method must pass
 
-    required_checks = ["package_structure", "manifest_integrity", "frame_count_match"]
-    required_pass = all(checks.get(check, False) for check in required_checks)
+    if clip_offset_seconds is not None:
+        # Clip validation: require package checks + ALL fingerprint methods + SSIM pass
+        required_checks = ["package_structure", "manifest_integrity"]
+        required_pass = all(checks.get(check, False) for check in required_checks)
 
-    # Content verification: either hash match OR SSIM pass
-    content_match = checks.get("digest_hash_match", False) or checks.get(
-        "ssim_score", False
-    )
+        # Content verification for clips: ALL fingerprint methods must pass + SSIM
+        # (If any method fails, there's likely tampering in that specific window)
+        fingerprint_checks = ["dhash_match", "phash_match", "frame_stats_match"]
+        fingerprint_pass = all(checks.get(check, False) for check in fingerprint_checks)
 
-    is_valid = required_pass and content_match
+        # SSIM check for clips (if available)
+        ssim_pass = checks.get("ssim_score", True)  # Default to True if not computed
+
+        is_valid = required_pass and fingerprint_pass and ssim_pass
+    else:
+        # Full video validation
+        required_checks = ["package_structure", "manifest_integrity", "frame_count_match"]
+        required_pass = all(checks.get(check, False) for check in required_checks)
+
+        # Content verification: either hash match OR SSIM pass
+        content_match = checks.get("digest_hash_match", False) or checks.get(
+            "ssim_score", False
+        )
+
+        is_valid = required_pass and content_match
 
     return VerificationResult(is_valid, checks, details, errors)

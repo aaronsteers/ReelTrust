@@ -116,11 +116,22 @@ def create_package(
     "package_path",
     type=click.Path(exists=True, path_type=Path),
 )
+@click.option(
+    "--clip-offset",
+    type=float,
+    default=None,
+    help="Time offset in seconds if verifying a clip (e.g., 140 for a clip starting at 2:20)",
+)
 def verify(
     video_path: Path,
     package_path: Path,
+    clip_offset: float | None,
 ):
-    """Verify a video against its verification package."""
+    """Verify a video against its verification package.
+
+    For full videos, compares the entire video against the package.
+    For clips, use --clip-offset to specify where the clip starts in the original video.
+    """
     global _report_file
 
     try:
@@ -147,6 +158,8 @@ def verify(
 
             print_output(f"Verifying video: {video_path}")
             print_output(f"Against package: {package_path}")
+            if clip_offset is not None:
+                print_output(f"Clip offset: {clip_offset}s ({int(clip_offset // 60)}:{int(clip_offset % 60):02d})")
             print_output(f"Verification output: {verification_dir}")
             print_output("This may take a moment...\n")
 
@@ -157,6 +170,7 @@ def verify(
                 package_path=package_path,
                 compression_width=240,
                 ssim_threshold=0.92,
+                clip_offset_seconds=clip_offset,
             )
 
             # Display results
@@ -171,6 +185,9 @@ def verify(
             # Display detailed checks
             print_output("### Verification Checks\n")
             for check_name, passed in result.checks.items():
+                # Skip N/A checks (None values) for clips
+                if passed is None:
+                    continue
                 status = "✓" if passed else "✗"
                 formatted_name = check_name.replace("_", " ").title()
                 print_output(f"  {status} {formatted_name}")
