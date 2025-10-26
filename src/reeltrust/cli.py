@@ -31,9 +31,8 @@ def cli():
     "-o",
     "--output",
     type=click.Path(path_type=Path),
-    default=Path(".data/outputs"),
-    help="Output directory for the verification package.",
-    show_default=True,
+    default=None,
+    help="Output directory for the verification package (default: .data/outputs/reel-trust-packages/{video_name}).",
 )
 @click.option(
     "-u",
@@ -80,10 +79,19 @@ def sign(
                 )
                 sys.exit(1)
 
+        # Determine output directory with deterministic naming
+        # Note: sign_video creates a subdirectory named {video}_package inside output_dir
+        if output is None:
+            # Default: .data/outputs/reel-trust-packages/
+            # This will create .data/outputs/reel-trust-packages/{video}_package/
+            output_dir = Path(".data/outputs/reel-trust-packages")
+        else:
+            output_dir = output
+
         # Create the signed package
         package_dir = sign_video(
             video_path=video_path,
-            output_dir=output,
+            output_dir=output_dir,
             user_identity=user,
             gps_coords=gps_coords,
             compression_width=width,

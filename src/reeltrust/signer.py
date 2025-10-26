@@ -7,6 +7,7 @@ from typing import Any
 from .audio_fingerprint import create_audio_fingerprint, save_audio_fingerprint
 from .metadata import create_metadata, save_metadata
 from .signature import create_manifest, create_signature, save_manifest, save_signature
+from .verifier import get_video_properties
 from .video_processor import compress_video, extract_audio, hash_file
 
 
@@ -63,7 +64,9 @@ def sign_video(
     digest_video_path = package_dir / "digest_video.mp4"
     compress_video(video_path, digest_video_path, width=compression_width)
     digest_video_hash = hash_file(digest_video_path)
+    digest_properties = get_video_properties(digest_video_path)
     print(f"    Digest created: {digest_video_path.name} ({digest_video_hash[:16]}...)")
+    print(f"    Properties: {digest_properties['frame_count']} frames @ {digest_properties['fps']} fps ({digest_properties['duration']}s)")
 
     # Step 3: Extract and fingerprint audio
     print("3/5 Extracting and fingerprinting audio...")
@@ -99,6 +102,7 @@ def sign_video(
         digest_video_hash,
         audio_fingerprint_hash,
         metadata_hash,
+        digest_properties,
     )
     manifest_path = package_dir / "manifest.json"
     save_manifest(manifest, manifest_path)

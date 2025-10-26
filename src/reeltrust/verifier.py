@@ -485,6 +485,55 @@ def get_video_frame_count(video_path: Path) -> int:
     return frame_count
 
 
+def get_video_properties(video_path: Path) -> dict[str, Any]:
+    """
+    Get video properties including frame count, FPS, and duration using ffprobe.
+
+    Args:
+        video_path: Path to the video file
+
+    Returns:
+        Dictionary with frame_count, fps, and duration
+
+    Raises:
+        subprocess.CalledProcessError: If ffprobe command fails
+        ValueError: If properties cannot be determined
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-count_packets",
+        "-show_entries",
+        "stream=nb_read_packets,r_frame_rate,duration",
+        "-of",
+        "json",
+        str(video_path),
+    ]
+
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    import json
+    data = json.loads(result.stdout)
+
+    stream = data.get("streams", [{}])[0]
+    frame_count = int(stream.get("nb_read_packets", 0))
+
+    # Parse frame rate (format: "30/1" or "30000/1001")
+    fps_str = stream.get("r_frame_rate", "30/1")
+    num, denom = map(int, fps_str.split("/"))
+    fps = round(num / denom, 2)
+
+    duration = float(stream.get("duration", 0))
+
+    return {
+        "frame_count": frame_count,
+        "fps": fps,
+        "duration": round(duration, 2),
+    }
+
+
 def verify_video_digest(
     video_path: Path,
     package_path: Path,
@@ -621,7 +670,12 @@ def verify_video_digest(
             # Step 6: Validate frame counts
             try:
                 recreated_frames = get_video_frame_count(recreated_digest_path)
-                stored_frames = get_video_frame_count(digest_path)
+
+                # Try to get stored frame count from manifest (optimization)
+                # Fall back to computing it if not present
+                stored_frames = manifest.get("files", {}).get("digest_video.mp4", {}).get("frame_count")
+                if stored_frames is None:
+                    stored_frames = get_video_frame_count(digest_path)
 
                 details["recreated_frame_count"] = recreated_frames
                 details["stored_frame_count"] = stored_frames

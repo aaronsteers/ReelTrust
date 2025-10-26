@@ -27,6 +27,7 @@ def create_manifest(
     digest_video_hash: str,
     audio_fingerprint_hash: str,
     metadata_hash: str,
+    digest_properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Create a manifest containing all file hashes and references.
@@ -37,20 +38,30 @@ def create_manifest(
         digest_video_hash: SHA-256 hash of compressed digest video
         audio_fingerprint_hash: SHA-256 hash of audio fingerprint JSON
         metadata_hash: SHA-256 hash of metadata JSON
+        digest_properties: Optional dict with frame_count, fps, duration (for optimization)
 
     Returns:
         Manifest dictionary
     """
+    digest_entry = {
+        "sha256": digest_video_hash,
+        "description": "Compressed reference video digest",
+    }
+    if digest_properties:
+        if "frame_count" in digest_properties:
+            digest_entry["frame_count"] = digest_properties["frame_count"]
+        if "fps" in digest_properties:
+            digest_entry["fps"] = digest_properties["fps"]
+        if "duration" in digest_properties:
+            digest_entry["duration"] = digest_properties["duration"]
+
     manifest = {
         "version": "1.0",
         "package_id": original_video_hash[
             :16
         ],  # Use first 16 chars of original video hash as ID
         "files": {
-            "digest_video.mp4": {
-                "sha256": digest_video_hash,
-                "description": "Compressed reference video digest",
-            },
+            "digest_video.mp4": digest_entry,
             "audio_fingerprint.json": {
                 "sha256": audio_fingerprint_hash,
                 "description": "Audio fingerprint data",
